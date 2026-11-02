@@ -1,0 +1,13 @@
+@media (max-width: 680px) {
+  .family-session-row:has(.family-session-detach) {
+    grid-template-columns: minmax(0, 1fr) 28px 28px;
+  }
+  .family-session-detach {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+  .family-session-row:has(.family-session-detach) .family-session-archive {
+    grid-column: 3;
+  }
+}

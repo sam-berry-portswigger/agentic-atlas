@@ -1,0 +1,63 @@
+/* Details are anchored to the header control and stay outside page flow. */
+.sync-status-popover {
+  max-width: calc(100vw - 24px);
+  max-height: min(65vh, 440px);
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sync-status-running {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.sync-status-content {
+  flex: 1;
+  min-width: 0;
+}
+.sync-status-content b,
+.sync-status-content small {
+  display: block;
+}
+.sync-status-content small,
+.sync-status-details p {
+  color: var(--mantine-color-dimmed, #65727d);
+}
+.sync-status-pause {
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.sync-status-pause:hover {
+  background: var(--mantine-color-default-hover, #f3f4f6);
+}
+.sync-status-meter {
+  display: block;
+  width: 100%;
+  height: 6px;
+  margin: 8px 0;
+  accent-color: var(--mantine-primary-color-filled, #47795f);
+}
+.sync-status-spinner {
+  animation: sync-status-spin 1s linear infinite;
+}
+.sync-status-details p {
+  margin: 4px 0 10px;
+}
+.sync-status-details ul {
+  padding-left: 18px;
+  margin: 0;
+}
+.sync-status-details li + li {
+  margin-top: 5px;
+}
+@keyframes sync-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sync-status-spinner {
+    animation: none;
+  }
+}

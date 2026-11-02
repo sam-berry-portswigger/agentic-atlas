@@ -1,0 +1,254 @@
+/* Semantic palette for Atlas custom surfaces; light fallbacks remain in layout CSS. */
+:root {
+  /* Identity and activity colours do not follow the selected UI accent. */
+  --atlas-brand-text: #2d423b;
+  --atlas-provider-codex: #759267;
+  --atlas-running-solid: #34a36b;
+  --atlas-running-text: #287b50;
+  --atlas-running-soft: #e7f5ed;
+  --atlas-running-border: #81b398;
+  --atlas-success-solid: #47795f;
+  --atlas-success-text: #3e6c4c;
+  --atlas-success-soft: #eaf3e8;
+  --atlas-warning-solid: #ad7b23;
+  --atlas-error-solid: #bc6257;
+  --atlas-unread-solid: #3b82c4;
+  --atlas-status-neutral-soft: #f0f4eb;
+  --atlas-accent-solid: #47795f;
+  --atlas-accent-soft: #eef4ed;
+  --atlas-accent-text: #3e6c54;
+  --atlas-accent-border: #b8cdbb;
+  color-scheme: light;
+}
+:root[data-atlas-accent="lavender"] {
+  --atlas-accent-solid: #7a5caf;
+  --atlas-accent-soft: #f0ebf8;
+  --atlas-accent-text: #6a4f9a;
+  --atlas-accent-border: #c6b6df;
+}
+:root[data-atlas-accent="blue"] {
+  --atlas-accent-solid: #3f78a9;
+  --atlas-accent-soft: #eaf2f9;
+  --atlas-accent-text: #386e9a;
+  --atlas-accent-border: #abc8df;
+}
+:root[data-mantine-color-scheme="dark"] {
+  color-scheme: dark;
+  --atlas-brand-text: #c2d5cc;
+  --atlas-provider-codex: #adc49e;
+  --atlas-running-solid: #54bd86;
+  --atlas-running-text: #8ed5ae;
+  --atlas-running-soft: #203c2e;
+  --atlas-running-border: #498d68;
+  --atlas-success-solid: #79b594;
+  --atlas-success-text: #acd2b9;
+  --atlas-success-soft: #23362e;
+  --atlas-warning-solid: #d4ac58;
+  --atlas-error-solid: #e28f83;
+  --atlas-unread-solid: #6cafe8;
+  --atlas-status-neutral-soft: #293441;
+  --atlas-accent-solid: #47795f;
+  --atlas-accent-soft: #23362e;
+  --atlas-accent-text: #acd2b9;
+  --atlas-accent-border: #50735e;
+  --atlas-bg-3b82c4: #263b4f;
+  --atlas-bg-819179: #354253;
+  --atlas-bg-8a8bc4: #344252;
+  --atlas-bg-91b8cf: #344252;
+  --atlas-bg-a6bfa1: #344252;
+  --atlas-bg-ad7b23: #4f4026;
+  --atlas-bg-b6a3d6: #344252;
+  --atlas-bg-baa56c: #4f4426;
+  --atlas-bg-bc6257: #4f2b26;
+  --atlas-bg-bdc5c0: #344252;
+  --atlas-bg-c4c18f: #344252;
+  --atlas-bg-c57971: #4f2a26;
+  --atlas-bg-dca5b7: #344252;
+  --atlas-bg-dfe4e8: #293441;
+  --atlas-bg-e5eae7: #293441;
+  --atlas-bg-e6b58b: #344252;
+  --atlas-bg-e8ebed: #293441;
+  --atlas-bg-e9ecee: #222c37;
+  --atlas-bg-edf0f3: #222c37;
+  --atlas-bg-f0eff4: #222c37;
+  --atlas-bg-f0f3f4: #222c37;
+  --atlas-bg-f1eef6: #222c37;
+  --atlas-bg-f1f3f5: #222c37;
+  --atlas-bg-f3f4f6: #222c37;
+  --atlas-bg-f8f9fb: #1d252f;
+  --atlas-bg-f9eee8: #222c37;
+  --atlas-bg-faf3e4: #222c37;
+  --atlas-bg-fafbfc: #1d252f;
+  --atlas-bg-fbf8f1: #222c37;
+  --atlas-bg-fcf1e8: #222c37;
+  --atlas-bg-fcf5ee: #222c37;
+  --atlas-bg-fdfefe: #1d252f;
+  --atlas-bg-ffffff: #1d252f;
+  --atlas-bg-ffffffed: #1d252fed;
+  --atlas-bg-fffffff5: #1d252ff5;
+  --atlas-bg-fffffffa: #1d252ffa;
+  --atlas-edge-192a2630: #8999ab30;
+  --atlas-edge-1e293704: #8999ab04;
+  --atlas-edge-243d2b03: #8999ab03;
+  --atlas-edge-26334210: #8999ab10;
+  --atlas-edge-28323d04: #8999ab04;
+  --atlas-edge-28323d06: #8999ab06;
+  --atlas-edge-28323d0b: #8999ab0b;
+  --atlas-edge-2c5e49: #8999ab;
+  --atlas-edge-34a36b14: #8999ab14;
+  --atlas-edge-34a36b17: #8999ab17;
+  --atlas-edge-3b82c414: #8999ab14;
+  --atlas-edge-405b3610: #8999ab10;
+  --atlas-edge-405b3620: #8999ab20;
+  --atlas-edge-47795f: #8999ab;
+  --atlas-edge-587b47: #8999ab;
+  --atlas-edge-609c80: #8999ab;
+  --atlas-edge-65727d: #8999ab;
+  --atlas-edge-6d877a: #8999ab;
+  --atlas-edge-729d8010: #8999ab10;
+  --atlas-edge-789968: #8999ab;
+  --atlas-edge-799d87: #8999ab;
+  --atlas-edge-8aa896: #8999ab;
+  --atlas-edge-8da977: #8999ab;
+  --atlas-edge-90ae7d: #8999ab;
+  --atlas-edge-9eada6: #3d4b5d;
+  --atlas-edge-a3c4d8: #3d4b5d;
+  --atlas-edge-a490cd: #3d4b5d;
+  --atlas-edge-a9b3bc: #3d4b5d;
+  --atlas-edge-b1a0d6: #3d4b5d;
+  --atlas-edge-c4b6dc: #3d4b5d;
+  --atlas-edge-c8cdd3: #3d4b5d;
+  --atlas-edge-cbd2d8: #3d4b5d;
+  --atlas-edge-cccba2: #3d4b5d;
+  --atlas-edge-dcb28e: #3d4b5d;
+  --atlas-edge-deb5c2: #3d4b5d;
+  --atlas-edge-dfe4e3: #3d4b5d;
+  --atlas-edge-dfe5df: #3d4b5d;
+  --atlas-edge-dfe5e9: #3d4b5d;
+  --atlas-edge-e1e5e9: #3d4b5d;
+  --atlas-edge-e3e6ea: #3d4b5d;
+  --atlas-edge-e3e7ea: #3d4b5d;
+  --atlas-edge-e4e8ec: #3d4b5d;
+  --atlas-edge-e5deee: #3d4b5d;
+  --atlas-edge-e6e9ec: #3d4b5d;
+  --atlas-edge-e7e9ed: #3d4b5d;
+  --atlas-edge-eac7a8: #3d4b5d;
+  --atlas-edge-eaedf0: #3d4b5d;
+  --atlas-edge-ebcdbd: #3d4b5d;
+  --atlas-edge-ebd8cb: #3d4b5d;
+  --atlas-edge-ebdfc3: #3d4b5d;
+  --atlas-edge-ebedf0: #3d4b5d;
+  --atlas-edge-edf0f2: #3d4b5d;
+  --atlas-edge-edf0f3: #3d4b5d;
+  --atlas-edge-f0f1f3: #3d4b5d;
+  --atlas-edge-f8f9fb: #3d4b5d;
+  --atlas-fg-28323d: #e0e7ef;
+  --atlas-fg-34414a: #e0e7ef;
+  --atlas-fg-416e88: #9ebed1;
+  --atlas-fg-45534a: #e0e7ef;
+  --atlas-fg-52616d: #e0e7ef;
+  --atlas-fg-64725c: #aab7c6;
+  --atlas-fg-64725f: #aab7c6;
+  --atlas-fg-65715f: #aab7c6;
+  --atlas-fg-65727d: #aab7c6;
+  --atlas-fg-65746b: #aab7c6;
+  --atlas-fg-665681: #aab7c6;
+  --atlas-fg-68766e: #aab7c6;
+  --atlas-fg-6c7569: #aab7c6;
+  --atlas-fg-6d7969: #aab7c6;
+  --atlas-fg-708271: #aab7c6;
+  --atlas-fg-728171: #aab7c6;
+  --atlas-fg-738071: #aab7c6;
+  --atlas-fg-748077: #aab7c6;
+  --atlas-fg-74816c: #aab7c6;
+  --atlas-fg-758079: #aab7c6;
+  --atlas-fg-75857c: #aab7c6;
+  --atlas-fg-767e87: #aab7c6;
+  --atlas-fg-767f79: #aab7c6;
+  --atlas-fg-768070: #aab7c6;
+  --atlas-fg-768074: #aab7c6;
+  --atlas-fg-76816a: #aab7c6;
+  --atlas-fg-768375: #aab7c6;
+  --atlas-fg-777e86: #aab7c6;
+  --atlas-fg-77806e: #aab7c6;
+  --atlas-fg-787e83: #aab7c6;
+  --atlas-fg-787e85: #aab7c6;
+  --atlas-fg-787e86: #aab7c6;
+  --atlas-fg-787f74: #aab7c6;
+  --atlas-fg-788071: #aab7c6;
+  --atlas-fg-78827d: #aab7c6;
+  --atlas-fg-797e81: #aab7c6;
+  --atlas-fg-797e82: #aab7c6;
+  --atlas-fg-797e83: #aab7c6;
+  --atlas-fg-797e84: #aab7c6;
+  --atlas-fg-7b8b7e: #aab7c6;
+  --atlas-fg-7c8891: #aab7c6;
+  --atlas-fg-7d8b72: #aab7c6;
+  --atlas-fg-7e8e74: #aab7c6;
+  --atlas-fg-7f8792: #aab7c6;
+  --atlas-fg-7f8991: #aab7c6;
+  --atlas-fg-80601f: #e3c68c;
+  --atlas-fg-867043: #cfc0a0;
+  --atlas-fg-899185: #aab7c6;
+  --atlas-fg-8f9c85: #aab7c6;
+  --atlas-fg-9298a2: #aab7c6;
+  --atlas-fg-9692a1: #aab7c6;
+  --atlas-fg-9aa18e: #aab7c6;
+  --atlas-fg-9aa290: #aab7c6;
+  --atlas-fg-9d7058: #ccb1a3;
+  --atlas-fg-a0a797: #aab7c6;
+  --atlas-fg-a36256: #cea8a2;
+  --atlas-fg-a8772b: #e2c18d;
+  --atlas-fg-a9b19f: #aab7c6;
+  --atlas-fg-ab8c64: #cdbaa2;
+  --atlas-fg-af8064: #ceb2a1;
+  --atlas-fg-b19467: #cfbda1;
+  --atlas-fg-b1c2a3: #aab7c6;
+  --atlas-fg-b4c5bf: #aab7c6;
+  --atlas-fg-b57e6b: #cfaca0;
+  --atlas-fg-c08b71: #d3ae9c;
+  --atlas-fg-f3f4f6: #f3f6fb;
+  --atlas-fg-ffffff: #f3f6fb;
+}
+
+:root[data-mantine-color-scheme="dark"][data-atlas-accent="lavender"] {
+  --atlas-accent-solid: #7a5caf;
+  --atlas-accent-soft: #322b43;
+  --atlas-accent-text: #c9b4ee;
+  --atlas-accent-border: #75628f;
+}
+:root[data-mantine-color-scheme="dark"][data-atlas-accent="blue"] {
+  --atlas-accent-solid: #3f78a9;
+  --atlas-accent-soft: #243447;
+  --atlas-accent-text: #acd0ee;
+  --atlas-accent-border: #506e8b;
+}
+.atlas-appearance-controls {
+  padding-bottom: 24px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+.atlas-accent-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 8px;
+  color: var(--mantine-color-text);
+  background: var(--mantine-color-body);
+}
+.atlas-accent-choice[aria-pressed="true"] {
+  border-color: var(--atlas-accent-border);
+  background: var(--atlas-accent-soft);
+}
+.atlas-accent-choice i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+:root[data-mantine-color-scheme="dark"] .mantine-Notification-root {
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-text);
+  border-color: var(--mantine-color-default-border);
+}

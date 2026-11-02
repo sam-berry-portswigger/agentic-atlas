@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "atlas": {
+      "command": "/opt/homebrew/bin/node",
+      "args": ["/absolute/path/to/agentic-atlas/server/mcp.js"]
+    }
+  }
+}
