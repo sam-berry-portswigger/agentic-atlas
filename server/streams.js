@@ -218,6 +218,9 @@ export function assignSessionStream(db, { session, streamId }) {
       streamId,
       session,
     );
+    db.prepare(
+      "UPDATE analysis_runs SET data=json_set(data,'$.assignmentsUpdatedAt',?) WHERE id=?",
+    ).run(new Date().toISOString(), run.id);
     db.exec("COMMIT");
     return { ok: true, streamId };
   } catch (e) {

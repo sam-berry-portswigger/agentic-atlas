@@ -9,6 +9,8 @@ import {
 import { attachTodayStreams } from "../server/today-streams.js";
 import { familyRoots } from "../shared/today-layout.js";
 import { disambiguateSessionTitles } from "../server/session-display.js";
+import { assignSessionStream } from "../server/streams.js";
+import { catalogueRevision } from "../shared/catalogue-revision.js";
 function fixture() {
   const db = new DatabaseSync(":memory:");
   db.exec(
@@ -200,4 +202,53 @@ test("repeated native titles stay separate and receive a deterministic disambigu
   sessions[1].title = "Different";
   disambiguateSessionTitles(sessions);
   assert.equal(sessions[0].sameTitle, undefined);
+});
+
+test("a reviewed assignment updates the catalogue revision for Explore polling as well as Today", () => {
+  const db = fixture();
+  try {
+    add(db, "coaching", 1);
+    const revision = () =>
+      catalogueRevision({
+        version: "v",
+        ...JSON.parse(
+          db.prepare("SELECT data FROM analysis_runs WHERE id='v'").get().data,
+        ),
+      });
+    const before = revision();
+    assignSessionStream(db, { session: "coaching", streamId: 2 });
+    assert.notEqual(revision(), before);
+    assert.equal(
+      db
+        .prepare(
+          "SELECT topic_id FROM analysis_members WHERE chunk_id='coaching'",
+        )
+        .get().topic_id,
+      2,
+    );
+    assert.equal(
+      JSON.parse(
+        db
+          .prepare(
+            "SELECT value FROM analysis_state WHERE key='stream_session_assignments'",
+          )
+          .get().value,
+      ).coaching,
+      2,
+    );
+    assert.equal(
+      attachTodayStreams(db, [{ id: "coaching" }]).workstreams.find(
+        (s) => s.id === 2,
+      ).name,
+      "Stream 2",
+    );
+    assert.equal(
+      db
+        .prepare("SELECT x FROM analysis_members WHERE chunk_id='coaching'")
+        .get().x,
+      0.2,
+    );
+  } finally {
+    db.close();
+  }
 });

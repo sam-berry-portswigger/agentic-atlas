@@ -68,6 +68,28 @@ const taskRow = (r) => {
     sessions: JSON.parse(r.sessions),
   };
 };
+// Task links outlive a generated catalogue. Resolve retired IDs from their last
+// published snapshot instead of silently losing their board and label.
+export function taskWorkstreams(db, tasks) {
+  const ids = [
+    ...new Set(tasks.map((t) => t.streamId).filter((id) => id != null)),
+  ];
+  if (!ids.length) return [];
+  const active = activeAnalysis(db)?.id;
+  if (!active) return [];
+  const topic = db.prepare(`SELECT t.id,t.name,t.description,t.color
+    FROM analysis_topics t JOIN analysis_runs r ON r.id=t.version
+    WHERE t.id=? ORDER BY (t.version=?) DESC,r.created_at DESC,r.id DESC LIMIT 1`);
+  return ids.map(
+    (id) =>
+      topic.get(id, active) || {
+        id,
+        name: `Previous work stream ${id}`,
+        description: "",
+        color: "gray",
+      },
+  );
+}
 export function createTodayService(
   db,
   {
@@ -105,14 +127,17 @@ export function createTodayService(
     const task = taskRow(row);
     return task ? { ...task, attachments: taskImages(db, task.id) } : null;
   };
-  const listTasks = ({ includeSuspended = false } = {}) => ({
-    tasks: db
+  const visibleTasks = ({ includeSuspended = false } = {}) =>
+    db
       .prepare("SELECT * FROM today_tasks ORDER BY created")
       .all()
       .map(readTask)
       .filter(canReadTask)
-      .filter((task) => actor !== "ai" || includeSuspended || !task.suspended),
-  });
+      .filter((task) => actor !== "ai" || includeSuspended || !task.suspended);
+  const listTasks = (options) => {
+    const tasks = visibleTasks(options);
+    return { tasks, taskWorkstreams: taskWorkstreams(db, tasks) };
+  };
   function validate(body, old) {
     const title = string(body.title ?? old?.title ?? "", 300, "title");
     if (!title) fail("Enter a task title.");
@@ -156,7 +181,8 @@ export function createTodayService(
         (!run ||
           !db
             .prepare("SELECT 1 FROM analysis_topics WHERE version=? AND id=?")
-            .get(run.id, streamId))
+            .get(run.id, streamId)) &&
+        !taskWorkstreams(db, visibleTasks()).some((s) => s.id === streamId)
       )
         fail("Work stream not found.", 404);
     }

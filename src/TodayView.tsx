@@ -137,6 +137,12 @@ export type Snapshot = {
   catalogueReady?: boolean;
   streamsUpdatedAt?: string | null;
   unclassifiedSessions?: number;
+  taskWorkstreams?: {
+    id: number;
+    name: string;
+    description: string;
+    color: string;
+  }[];
   workstreams?: {
     id: number;
     name: string;
@@ -671,10 +677,18 @@ export default function TodayView({
       live = false;
     };
   }, [viewedLinks]);
-  const taskStreams = (data?.workstreams || [])
-    .filter((s) => !s.background)
-    .sort(compareStreamActivity);
   const taskStreamIds = openTaskStreamIds(data?.tasks || []);
+  const taskStreams = [
+    ...new Map(
+      [...(data?.taskWorkstreams || []), ...(data?.workstreams || [])].map(
+        (stream) => [stream.id, stream],
+      ),
+    ).values(),
+  ]
+    .filter(
+      (s) => !("background" in s && s.background) || taskStreamIds.has(s.id),
+    )
+    .sort(compareStreamActivity);
   const boardStreams = taskStreams.filter((s) => taskStreamIds.has(s.id));
   const activeBoard =
     boardStream === "all" || boardStreams.some((s) => s.id === boardStream)
@@ -686,7 +700,7 @@ export default function TodayView({
   return (
     <div className="today-view">
       <header className="page-heading">
-        <div>
+        <div className="page-intro">
           <h1>Today</h1>
           <p>
             {new Date().toLocaleDateString("en-GB", {
@@ -697,7 +711,7 @@ export default function TodayView({
             · Your work streams, sessions and next steps.
           </p>
         </div>
-        <div className="td-heading-actions">
+        <div className="page-actions td-heading-actions">
           <ActionIcon
             variant="subtle"
             aria-label="How Today works"
@@ -1053,9 +1067,8 @@ export default function TodayView({
                               )}
                               {activeBoard === "all" && t.streamId !== null && (
                                 <span>
-                                  {data?.workstreams?.find(
-                                    (s) => s.id === t.streamId,
-                                  )?.name || "Work stream"}
+                                  {taskStreams.find((s) => s.id === t.streamId)
+                                    ?.name || "Work stream"}
                                 </span>
                               )}
                               {t.sessions.length > 0 && (
@@ -1540,7 +1553,7 @@ export default function TodayView({
                 </span>
                 {viewedTask.streamId !== null && (
                   <span>
-                    {data?.workstreams?.find(
+                    {taskStreams.find(
                       (stream) => stream.id === viewedTask.streamId,
                     )?.name || "Previous work stream"}
                   </span>
