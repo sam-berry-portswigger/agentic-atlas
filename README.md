@@ -37,6 +37,8 @@ The web API uses `GET /api/today?start=ISO&end=ISO` (a local-day interval, maxim
 
 ## Run
 
+For a short in-app walkthrough, open **Settings & models → First-time setup guide**, or use the same link in Help. It covers starting Ollama, downloading local models, choosing session folders and models, the first sync, and the optional MCP connection. Commands can be copied individually; returning to Settings preserves unsaved edits.
+
 Requires **Node.js 22.13+**, macOS, and [Ollama](https://ollama.com). Node 24+ is recommended for its built-in SQLite support. There is no Python service, Docker requirement, cloud inference, or API key.
 
 ```sh

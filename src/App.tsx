@@ -36,6 +36,7 @@ import EmbeddingMap from "./EmbeddingMap";
 import TodayView from "./TodayView";
 import WorkOverview from "./WorkOverview";
 import McpSetup from "./McpSetup";
+import FirstTimeSetup from "./FirstTimeSetup";
 import SearchAnswer, { type SearchRequest } from "./SearchAnswer";
 import { dateRange } from "../shared/dates.js";
 import { catalogueRevision } from "../shared/catalogue-revision.js";
@@ -104,6 +105,7 @@ export default function App() {
     [error, setError] = useState("");
   const [searching, setSearching] = useState(false),
     [settings, setSettings] = useState(false),
+    [settingsGuide, setSettingsGuide] = useState(false),
     [settingsError, setSettingsError] = useState(""),
     [help, setHelp] = useState(false),
     [mcpInitialView, setMcpInitialView] = useState<"activity" | "setup">(
@@ -320,6 +322,16 @@ export default function App() {
   function openSettings() {
     setDraft(status?.config || null);
     setSettingsError("");
+    setSettings(true);
+    setSettingsGuide(false);
+  }
+  function openSetupGuide() {
+    if (!settings) {
+      setDraft(status?.config || null);
+      setSettingsError("");
+    }
+    setHelp(false);
+    setSettingsGuide(true);
     setSettings(true);
   }
   const hour = new Date().getHours();
@@ -762,104 +774,114 @@ export default function App() {
       <Modal
         opened={settings}
         onClose={() => setSettings(false)}
-        title="Settings & models"
+        title={settingsGuide ? "First-time setup" : "Settings & models"}
         size={600}
         closeButtonProps={{ "aria-label": "Close settings" }}
       >
-        <AppearanceControls />
-        {draft && (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void save();
+        {settingsGuide ? (
+          <FirstTimeSetup
+            connected={status?.ollama.connected}
+            onSettings={() => setSettingsGuide(false)}
+            onMcp={() => {
+              setSettings(false);
+              navigate("mcp");
             }}
-          >
-            <Stack gap="md">
-              <Text fw={600} size="sm">
-                Session sources
-              </Text>
-              <TextInput
-                label="Claude sessions directory"
-                value={draft.source}
-                onChange={(e) =>
-                  setDraft({ ...draft, source: e.currentTarget.value })
-                }
-              />
-              <TextInput
-                label="Codex sessions directory"
-                description="Includes archived sessions. Leave blank to use Claude only."
-                value={draft.codexSource}
-                placeholder="~/.codex/sessions"
-                onChange={(e) =>
-                  setDraft({ ...draft, codexSource: e.currentTarget.value })
-                }
-              />
-              <Text fw={600} size="sm" mt="xs">
-                Local models
-              </Text>
-              <Autocomplete
-                label="Embedding model"
-                description="Changing this model re-embeds the index at the next sync."
-                value={draft.embeddingModel}
-                data={status?.ollama.models.map((m) => m.name) || []}
-                onChange={(value) =>
-                  setDraft({ ...draft, embeddingModel: value })
-                }
-              />
-              <Autocomplete
-                label="Search & summary model"
-                description="Choose an installed instruction model, or enter its name."
-                value={draft.generationModel}
-                data={status?.ollama.models.map((m) => m.name) || []}
-                onChange={(value) =>
-                  setDraft({ ...draft, generationModel: value })
-                }
-              />
-              <details className="atlas-model-setup">
-                <summary>First-time model setup</summary>
-                <div className="setup-code">
-                  <code>ollama serve</code>
-                  <code>ollama pull embeddinggemma</code>
-                  <small>
-                    Download models locally before use. MLX models run natively
-                    on Apple Silicon.
-                  </small>
-                </div>
-              </details>
-              {settingsError && (
-                <div className="alert error" role="alert">
-                  {settingsError}
-                </div>
-              )}
-              {busy && (
-                <Text size="sm" c="dimmed">
-                  Indexing is running. Wait for it to finish or pause it before
-                  saving model or source changes.
-                </Text>
-              )}
-            </Stack>
-            <div className="atlas-settings-actions">
-              <Button
-                type="button"
-                variant="default"
-                onClick={() => setSettings(false)}
+          />
+        ) : (
+          <>
+            <Button
+              variant="default"
+              leftSection={<CircleHelp size={15} />}
+              mb="lg"
+              onClick={openSetupGuide}
+            >
+              First-time setup guide
+            </Button>
+            <AppearanceControls />
+            {draft && (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void save();
+                }}
               >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                variant="filled"
-                loading={saving}
-                disabled={busy}
-              >
-                Save settings
-              </Button>
-            </div>
-            <div className="hardware-info">
-              <Cpu size={14} />
-              {status?.hardware.chip} · {status?.hardware.memory} GB memory
-            </div>
-          </form>
+                <Stack gap="md">
+                  <Text fw={600} size="sm">
+                    Session sources
+                  </Text>
+                  <TextInput
+                    label="Claude sessions directory"
+                    value={draft.source}
+                    onChange={(e) =>
+                      setDraft({ ...draft, source: e.currentTarget.value })
+                    }
+                  />
+                  <TextInput
+                    label="Codex sessions directory"
+                    description="Includes archived sessions. Leave blank to use Claude only."
+                    value={draft.codexSource}
+                    placeholder="~/.codex/sessions"
+                    onChange={(e) =>
+                      setDraft({ ...draft, codexSource: e.currentTarget.value })
+                    }
+                  />
+                  <Text fw={600} size="sm" mt="xs">
+                    Local models
+                  </Text>
+                  <Autocomplete
+                    label="Embedding model"
+                    description="Changing this model re-embeds the index at the next sync."
+                    value={draft.embeddingModel}
+                    data={status?.ollama.models.map((m) => m.name) || []}
+                    onChange={(value) =>
+                      setDraft({ ...draft, embeddingModel: value })
+                    }
+                  />
+                  <Autocomplete
+                    label="Search & summary model"
+                    description="Choose an installed instruction model, or enter its name."
+                    value={draft.generationModel}
+                    data={status?.ollama.models.map((m) => m.name) || []}
+                    onChange={(value) =>
+                      setDraft({ ...draft, generationModel: value })
+                    }
+                  />
+                  {settingsError && (
+                    <div className="alert error" role="alert">
+                      {settingsError}
+                    </div>
+                  )}
+                  {busy && (
+                    <Text size="sm" c="dimmed">
+                      Indexing is running. Wait for it to finish or pause it
+                      before saving model or source changes.
+                    </Text>
+                  )}
+                </Stack>
+                <div className="atlas-settings-actions">
+                  <Button
+                    type="button"
+                    variant="default"
+                    onClick={() => setSettings(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="filled"
+                    loading={saving}
+                    disabled={busy}
+                  >
+                    Save settings
+                  </Button>
+                </div>
+                <div className="hardware-info">
+                  <Cpu size={14} />
+                  {status?.hardware.chip} · {status?.hardware.memory} GB memory
+                </div>
+              </form>
+            )}
+          </>
         )}
       </Modal>
       <Modal
@@ -874,6 +896,13 @@ export default function App() {
             Atlas turns your Claude and Codex sessions into a searchable library
             of context.
           </p>
+          <Button
+            variant="default"
+            leftSection={<CircleHelp size={15} />}
+            onClick={openSetupGuide}
+          >
+            First-time setup guide
+          </Button>
           <div className="help-step">
             <span>01</span>
             <div>
