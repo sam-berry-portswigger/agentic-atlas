@@ -17,4 +17,5 @@ export function assistantSetup(
   command: string;
   prompt: string;
   label: string;
+  skill: { name: string; content: string; defaultRule: string } | null;
 };

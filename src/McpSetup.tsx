@@ -193,7 +193,9 @@ export default function McpSetup({
                 <p className="mcp-setup-hint" aria-live="polite">
                   {invalid
                     ? "Choose at least one project."
-                    : "Search, work streams and shared tasks use the same connection. No separate board setup."}
+                    : client === "chatgpt"
+                      ? "Search, work streams and shared tasks use the same connection."
+                      : "Setup includes the Atlas skill for default task tracking and adaptive search."}
                 </p>
                 <details className="mcp-setup-advanced">
                   <summary>Advanced setup</summary>

@@ -1,3 +1,5 @@
+import { atlasSkill } from "../shared/atlas-skill.js";
+import { searchWorkflow } from "../shared/atlas-search-workflow.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -39,6 +41,8 @@ test("Today MCP tools share persisted tasks across clients, reject stale revisio
       /proactively during substantive user-requested work/,
     );
     assert.match(a.getInstructions(), /latest revision/);
+    assert.ok(a.getInstructions().includes(searchWorkflow));
+    assert.ok(atlasSkill().includes(searchWorkflow));
     assert.match(a.getInstructions(), /do not fabricate one/);
     const { task } = await call(a, "atlas_create_task", {
       title: "Shared context",
