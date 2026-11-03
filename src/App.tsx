@@ -345,7 +345,7 @@ export default function App() {
           </svg>
           <span className="brand-wordmark">
             <strong>Atlas</strong>
-            <span>Work, in context</span>
+            <span>Work in context</span>
           </span>
         </a>
         <nav>

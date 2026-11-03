@@ -139,7 +139,7 @@ For a client that uses `mcpServers` JSON configuration, copy the `atlas` entry f
 }
 ```
 
-Client configuration formats differ. The underlying launch command is `node /absolute/path/to/claude-embeddings/server/mcp.js`, using **stdio** transport. You can also run `npm run --silent mcp` from the repository. This is a protocol process, so waiting silently for JSON-RPC input is expected. Stdout contains protocol messages only; diagnostics go to stderr.
+Client configuration formats differ. The underlying launch command is `node /absolute/path/to/agentic-atlas/server/mcp.js`, using **stdio** transport. You can also run `npm run --silent mcp` from the repository. This is a protocol process, so waiting silently for JSON-RPC input is expected. Stdout contains protocol messages only; diagnostics go to stderr.
 
 The default database is this installation's `.atlas/atlas.sqlite`, even when a client launches the process from a different working directory. To use another index, set an absolute `ATLAS_DATA_DIR`. The configured source directory and embedding model come from that same index's settings. Nothing changes the MCP client's working directory.
 
