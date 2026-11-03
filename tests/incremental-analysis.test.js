@@ -399,3 +399,58 @@ test("changed intent invalidates inferred titles while preserving manual names",
     db.close();
   }
 });
+
+test("selecting the explicit :latest alias preserves stream identities and cached vectors", async () => {
+  const db = fixture();
+  try {
+    const before = db
+      .prepare("SELECT * FROM analysis_topics ORDER BY id")
+      .all();
+    const cached = db
+      .prepare("SELECT * FROM analysis_conversations ORDER BY session")
+      .all();
+    db.prepare("INSERT INTO settings VALUES('embeddingModel',?)").run(
+      JSON.stringify("embeddinggemma:latest"),
+    );
+    const result = await updateCatalogue(db, {
+      bootstrap: () => {
+        throw Error("an alias must not rebuild or rename the catalogue");
+      },
+    });
+    assert.equal(result.unchanged, true);
+    assert.equal(result.version, "old");
+    assert.deepEqual(
+      db.prepare("SELECT * FROM analysis_topics ORDER BY id").all(),
+      before,
+    );
+    assert.deepEqual(
+      db.prepare("SELECT * FROM analysis_conversations ORDER BY session").all(),
+      cached,
+    );
+    add(db, "alias-new-chat", "new-alias", [0, 1]);
+    const appended = await updateCatalogue(db, {
+      bootstrap: () => {
+        throw Error("routine alias sync must keep saved topics");
+      },
+    });
+    assert.equal(
+      db
+        .prepare(
+          "SELECT topic_id FROM analysis_members WHERE version=? AND chunk_id='alias-new-chat'",
+        )
+        .get(appended.version).topic_id,
+      20,
+    );
+    assert.deepEqual(
+      db
+        .prepare(
+          "SELECT id,name,color FROM analysis_topics WHERE version=? ORDER BY id",
+        )
+        .all(appended.version)
+        .map((row) => ({ ...row })),
+      before.map(({ id, name, color }) => ({ id, name, color })),
+    );
+  } finally {
+    db.close();
+  }
+});

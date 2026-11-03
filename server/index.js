@@ -29,6 +29,7 @@ import { sessionNameResolver } from "./session-labels.js";
 import { repairSemanticMemberships } from "./semantic-repair.js";
 import { createSyncCoordinator } from "./sync-coordinator.js";
 import { catalogueRevision } from "../shared/catalogue-revision.js";
+import { preserveModelAlias } from "../shared/model-names.js";
 let searchAnswerController = null;
 const db = openDb(),
   app = express();
@@ -357,6 +358,10 @@ app.post(
           return res.status(400).json({ error: `Invalid ${key}` });
         next[key] = req.body[key].trim();
       }
+    next.embeddingModel = preserveModelAlias(
+      next.embeddingModel,
+      old.embeddingModel,
+    );
     next.source = await realpath(next.source.replace(/^~(?=\/)/, os.homedir()));
     if (next.codexSource)
       next.codexSource = path.resolve(

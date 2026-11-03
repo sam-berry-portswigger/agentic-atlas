@@ -2,7 +2,8 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { initTodaySchema } from "./today-store.js";
-import { initAnalysisSchema } from "./analysis-store.js";
+import { initAnalysisSchema, activeAnalysis } from "./analysis-store.js";
+import { preserveModelAlias } from "../shared/model-names.js";
 export const dataDir = path.resolve(process.env.ATLAS_DATA_DIR || ".atlas");
 export function openDb() {
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
@@ -55,6 +56,10 @@ export function getConfig(db) {
   };
   for (const row of db.prepare("SELECT * FROM settings").all())
     if (row.key in defaults) defaults[row.key] = JSON.parse(row.value);
+  defaults.embeddingModel = preserveModelAlias(
+    defaults.embeddingModel,
+    activeAnalysis(db)?.model,
+  );
   return defaults;
 }
 export function vectorBuffer(values) {
