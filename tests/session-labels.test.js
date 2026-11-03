@@ -52,8 +52,7 @@ function result(prompt) {
     streams: [
       {
         name: "Release scheduling",
-        description:
-          "Ship the new quick-search flow with verified UI tests.",
+        description: "Ship the new quick-search flow with verified UI tests.",
         sources: p.sessions.map((s) => s.source),
         background: false,
       },
@@ -87,11 +86,7 @@ test("one interpretation call publishes reusable session labels without renaming
       "Investigate a new issue",
     );
     assert.equal(
-      resolve(
-        "native",
-        "DEMO-123. Turn on the quick-search flag.",
-        "desktop",
-      ),
+      resolve("native", "DEMO-123. Turn on the quick-search flag.", "desktop"),
       "DEMO-123. Turn on the quick-search flag.",
     );
     assert.equal(

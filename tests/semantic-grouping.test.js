@@ -52,7 +52,11 @@ test("mixed preliminary clusters refine by conversation semantics despite advers
       name: "Task Navigation UI",
       centroid: vectorBuffer([1, 0]),
     },
-    { id: 43, name: "Schedule Feature Rollout", centroid: vectorBuffer([0, 1]) },
+    {
+      id: 43,
+      name: "Schedule Feature Rollout",
+      centroid: vectorBuffer([0, 1]),
+    },
     { id: 58, name: "Background", centroid: vectorBuffer([1, 0]) },
   ];
   const assigned = assignStreamRows(plans, candidates, { previous });

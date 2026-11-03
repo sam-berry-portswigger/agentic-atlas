@@ -18,7 +18,11 @@ const input = {
       text: "Implement the scheduling change.",
       streamId: 12,
     },
-    { id: "release-result", text: "The scheduling tests passed.", streamId: 12 },
+    {
+      id: "release-result",
+      text: "The scheduling tests passed.",
+      streamId: 12,
+    },
     {
       id: "atlas-result",
       text: "The Atlas board now saves tasks.",
