@@ -37,6 +37,12 @@ npm start
 
 Then open **http://127.0.0.1:4317**. Both servers bind to loopback only.
 
+## App updates
+
+Atlas checks the configured GitHub origin’s default branch at startup and every six hours using your existing Git credentials. An update notice appears below Settings; review the locally generated overview and expandable commit list before choosing **Update now**, **Skip this version**, or **Don’t remind me again**. Re-enable checks in Settings & models.
+
+Updates fast-forward a clean checkout on its default branch. Local edits, divergent history, active indexing, and dependency changes block the action with an explanation. Updates never install packages or overwrite local changes. If dependencies changed, update and install them from the terminal. Restart Atlas after updating; production installs also need `npm run build`. Your ignored `.atlas/` data stays in place. Set `ATLAS_UPDATE_CHECKS=0` to suppress scheduled checks for test or offline runs.
+
 ## Apple Silicon
 
 The default 300M-parameter [EmbeddingGemma](https://ollama.com/library/embeddinggemma) model is about 622 MB. Ollama handles local hardware acceleration; installed MLX generation models can be selected directly. A compact quantized model such as [Qwen3 4B](https://ollama.com/library/qwen3:4b) is an alternative if you prefer a smaller memory footprint. Atlas disables reasoning output for short HyDE/summary tasks, uses a 12K context for search answers and a bounded 16K context for work overviews, limits batches to 24, and bounds map computation to avoid unnecessary memory pressure. Actual speed depends on your chip, RAM, model, and other running workloads.
