@@ -423,6 +423,7 @@ export default function App() {
             <McpSetup project="" initialView={mcpInitialView} />
           ) : page === "today" ? (
             <TodayView
+              taskScope={scopedQuery}
               onAgentSetup={() => {
                 setMcpInitialView("setup");
                 navigate("mcp");

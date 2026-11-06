@@ -27,6 +27,7 @@ import {
   compareTasks,
 } from "../shared/today-focus.js";
 import TodayBoards from "./TodayBoards";
+import { taskStreamOptions } from "../shared/task-workstreams.js";
 import SessionBrief from "./SessionBrief";
 import SessionRename from "./SessionRename";
 import TaskImages, { pastedImages, type TaskImage } from "./TaskImages";
@@ -224,6 +225,7 @@ export default function TodayView({
   onAgentSetup,
   analysisJob,
   namingPending = false,
+  taskScope = "",
   autoSync,
 }: {
   onOpenStream?: (
@@ -233,6 +235,7 @@ export default function TodayView({
   onAgentSetup: () => void;
   analysisJob?: SyncJob;
   namingPending?: boolean;
+  taskScope?: string;
   autoSync?: { paused: boolean; lastSuccessfulAt: string | null };
 }) {
   const [data, setData] = useState<Snapshot | null>(null),
@@ -564,6 +567,7 @@ export default function TodayView({
   }
   async function saveTask(e: React.FormEvent) {
     e.preventDefault();
+    if (taskStreamsLoading) return;
     setSaving(true);
     setTaskError("");
     try {
@@ -776,6 +780,60 @@ export default function TodayView({
       (s) => !("background" in s && s.background) || taskStreamIds.has(s.id),
     )
     .sort(compareStreamActivity);
+  const [taskMap, setTaskMap] = useState<{
+    points: { cluster: number }[];
+    topics: { cluster: number; title: string }[];
+  }>({ points: [], topics: [] });
+  const [taskStreamsLoading, setTaskStreamsLoading] = useState(false);
+  const [taskStreamsError, setTaskStreamsError] = useState("");
+  useEffect(() => {
+    if (!taskOpened) return;
+    let live = true;
+    setTaskStreamsLoading(true);
+    setTaskStreamsError("");
+    void api<typeof taskMap>("map?" + taskScope)
+      .then((map) => {
+        if (live) {
+          setTaskMap(map);
+          if (!edit)
+            setTaskStream((current) =>
+              map.points.some((point) => point.cluster === current)
+                ? current
+                : "",
+            );
+        }
+      })
+      .catch((error) => {
+        if (live) {
+          setTaskMap({ points: [], topics: [] });
+          setTaskStreamsError((error as Error).message);
+        }
+      })
+      .finally(() => {
+        if (live) setTaskStreamsLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [taskOpened, taskScope, data?.streamsUpdatedAt, edit?.id]);
+  const selectedTaskStream =
+    edit && taskStream !== ""
+      ? taskStreams.find((stream) => stream.id === taskStream) || {
+          id: taskStream,
+          name: "Previous work stream",
+        }
+      : null;
+  const taskStreamChoices = taskStreamOptions(
+    taskMap,
+    selectedTaskStream
+      ? {
+          ...selectedTaskStream,
+          historical: !data?.workstreams?.some(
+            (stream) => stream.id === selectedTaskStream.id,
+          ),
+        }
+      : null,
+  );
   const boardStreams = taskStreams.filter((s) => taskStreamIds.has(s.id));
   const activeBoard =
     boardStream === "all" || boardStreams.some((s) => s.id === boardStream)
@@ -1874,25 +1932,16 @@ export default function TodayView({
                 <Select
                   label="Work stream"
                   aria-label="Task work stream"
+                  description="Workstreams shown in Explore for its selected date range."
+                  disabled={taskStreamsLoading}
+                  error={taskStreamsError || undefined}
                   value={taskStream === "" ? "" : String(taskStream)}
                   onChange={(value) =>
                     setTaskStream(value ? Number(value) : "")
                   }
                   data={[
                     { value: "", label: "No work stream · All board only" },
-                    ...taskStreams.map((stream) => ({
-                      value: String(stream.id),
-                      label: stream.name,
-                    })),
-                    ...(taskStream !== "" &&
-                    !taskStreams.some((stream) => stream.id === taskStream)
-                      ? [
-                          {
-                            value: String(taskStream),
-                            label: "Previous work stream",
-                          },
-                        ]
-                      : []),
+                    ...taskStreamChoices,
                   ]}
                   searchable
                 />
