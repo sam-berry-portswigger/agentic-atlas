@@ -1605,13 +1605,22 @@ export default function TodayView({
           deleteTarget
             ? "Delete task?"
             : taskMode === "view" && viewedTask
-              ? "Task"
+              ? viewedTask.title
               : edit
                 ? "Edit task"
                 : "New task"
         }
         closeButtonProps={{ "aria-label": "Close task", disabled: saving }}
         classNames={{ content: "atlas-task-modal" }}
+        styles={{
+          header: { alignItems: "flex-start", paddingBottom: 16 },
+          title: {
+            fontSize: 18,
+            fontWeight: taskMode === "view" && !deleteTarget ? 500 : 600,
+            lineHeight: 1.5,
+          },
+          close: { marginTop: 2 },
+        }}
       >
         <>
           {deleteTarget ? (
@@ -1648,14 +1657,39 @@ export default function TodayView({
             </Stack>
           ) : taskMode === "view" && viewedTask ? (
             <>
-              <h2 className="td-task-detail-title">{viewedTask.title}</h2>
-              <Group justify="space-between" wrap="nowrap" mb="md">
+              {(viewedTask.streamId !== null || viewedTask.project) && (
+                <div className="td-task-context">
+                  <Network size={14} aria-hidden="true" />
+                  <span>
+                    {[
+                      taskStreams.find((s) => s.id === viewedTask.streamId)
+                        ?.name ||
+                        (viewedTask.streamId !== null
+                          ? "Previous work stream"
+                          : ""),
+                      viewedTask.project,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                </div>
+              )}
+              <Group
+                justify="space-between"
+                gap="sm"
+                className="td-task-toolbar"
+              >
                 <Group gap="sm">
                   <Select
                     aria-label="Task status"
                     comboboxProps={{ zIndex: 240 }}
-                    size="xs"
-                    w={145}
+                    size="sm"
+                    w={140}
+                    leftSection={
+                      <span
+                        className={`td-task-status-dot ${viewedTask.status}`}
+                      />
+                    }
                     value={viewedTask.status}
                     data={columns.map(([value, label]) => ({ value, label }))}
                     allowDeselect={false}
@@ -1675,54 +1709,57 @@ export default function TodayView({
                     </CountBadge>
                   )}
                 </Group>
-                <Menu position="bottom-end" withinPortal zIndex={240}>
-                  <Menu.Target>
-                    <ActionIcon
-                      variant="subtle"
-                      color="gray"
-                      aria-label="More task actions"
-                      disabled={saving}
-                    >
-                      <Ellipsis size={18} />
-                    </ActionIcon>
-                  </Menu.Target>
-                  <Menu.Dropdown>
-                    <Menu.Item
-                      leftSection={
-                        viewedTask.suspended ? (
-                          <Play size={14} />
-                        ) : (
-                          <Pause size={14} />
-                        )
-                      }
-                      onClick={() => void toggleTaskSuspension(viewedTask)}
-                    >
-                      {viewedTask.suspended ? "Resume task" : "Suspend task"}
-                    </Menu.Item>
-                    <Menu.Divider />
-                    <Menu.Item
-                      color="red"
-                      leftSection={<Trash2 size={14} />}
-                      onClick={() => {
-                        setDeleteTarget(viewedTask);
-                        setTaskError("");
-                      }}
-                    >
-                      Delete task
-                    </Menu.Item>
-                  </Menu.Dropdown>
-                </Menu>
+                <Group gap="xs">
+                  <Button
+                    variant="default"
+                    disabled={saving}
+                    leftSection={<Pencil size={14} />}
+                    onClick={() =>
+                      openTask(viewedTask, undefined, "todo", true)
+                    }
+                  >
+                    Edit task
+                  </Button>
+                  <Menu position="bottom-end" withinPortal zIndex={240}>
+                    <Menu.Target>
+                      <ActionIcon
+                        variant="subtle"
+                        color="gray"
+                        aria-label="More task actions"
+                        size={34}
+                        disabled={saving}
+                      >
+                        <Ellipsis size={18} />
+                      </ActionIcon>
+                    </Menu.Target>
+                    <Menu.Dropdown>
+                      <Menu.Item
+                        leftSection={
+                          viewedTask.suspended ? (
+                            <Play size={14} />
+                          ) : (
+                            <Pause size={14} />
+                          )
+                        }
+                        onClick={() => void toggleTaskSuspension(viewedTask)}
+                      >
+                        {viewedTask.suspended ? "Resume task" : "Suspend task"}
+                      </Menu.Item>
+                      <Menu.Divider />
+                      <Menu.Item
+                        color="red"
+                        leftSection={<Trash2 size={14} />}
+                        onClick={() => {
+                          setDeleteTarget(viewedTask);
+                          setTaskError("");
+                        }}
+                      >
+                        Delete task
+                      </Menu.Item>
+                    </Menu.Dropdown>
+                  </Menu>
+                </Group>
               </Group>
-              {(viewedTask.streamId !== null || viewedTask.project) && (
-                <Text size="xs" c="dimmed" mb="lg">
-                  {[
-                    taskStreams.find((s) => s.id === viewedTask.streamId)?.name,
-                    viewedTask.project,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </Text>
-              )}
               {viewedTask.suspended && (
                 <Text size="xs" c="dimmed" mb="md">
                   Agents skip this task until you resume it.
@@ -1784,19 +1821,11 @@ export default function TodayView({
                   {taskError}
                 </Text>
               )}
-              <div className="td-task-view-footer">
-                <Stack gap={4}>
-                  <TaskOrigin origin={viewedTask.createdBy} detailed />
-                  <small>Updated {age(viewedTask.updated)}</small>
-                </Stack>
-                <Button
-                  variant="default"
-                  disabled={saving}
-                  leftSection={<Pencil size={14} />}
-                  onClick={() => openTask(viewedTask, undefined, "todo", true)}
-                >
-                  Edit task
-                </Button>
+              <div className="td-task-view-footer td-task-provenance">
+                <TaskOrigin origin={viewedTask.createdBy} detailed />
+                <Text size="xs" c="dimmed">
+                  Updated {age(viewedTask.updated)}
+                </Text>
               </div>
             </>
           ) : (

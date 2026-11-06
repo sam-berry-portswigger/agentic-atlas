@@ -1361,12 +1361,6 @@
   justify-self: start;
 }
 
-.td-task-detail-title {
-  margin: 0 0 18px;
-  font-size: 22px;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
 .atlas-task-modal .td-task-detail-notes {
   border: 0;
   background: transparent;
@@ -1434,9 +1428,6 @@
   outline-offset: 3px;
 }
 @media (max-width: 600px) {
-  .td-task-detail-title {
-    font-size: 19px;
-  }
   .td-image-viewport {
     height: 55vh;
   }
@@ -1451,7 +1442,61 @@
   border-top: 1px solid var(--mantine-color-default-border);
 }
 
+/* One title, a compact action row, and quiet provenance for task details. */
+.td-task-context {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  margin-bottom: 20px;
+}
+.td-task-context svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.td-task-toolbar {
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+.td-task-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mantine-color-dimmed);
+}
+.td-task-status-dot.doing {
+  background: var(--atlas-warning-solid);
+}
+.td-task-status-dot.done {
+  background: var(--atlas-success-solid);
+}
+.td-task-provenance {
+  justify-content: flex-start;
+  column-gap: 16px;
+  row-gap: 6px;
+  margin-top: 24px;
+  padding-top: 16px;
+}
+.td-task-provenance .td-task-origin {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+}
+
 .td-image-text-editor {
   position: absolute;
   z-index: 1;
+}
+
+.td-image-tool-tabs {
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.td-image-tool-tabs .mantine-SegmentedControl-root {
+  min-width: max-content;
 }
