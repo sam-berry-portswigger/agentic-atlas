@@ -8,6 +8,7 @@ import {
 } from "../server/today-store.js";
 import {
   focusedSessions,
+  todayStatusCounts,
   streamActivity,
   compareStreamActivity,
   relevantArchives,
@@ -146,4 +147,33 @@ test("stream ordering counts returns to human work, deduplicates history and exc
     { id: 1, name: "A", activity: activity.get(1) },
   ].sort(compareStreamActivity);
   assert.equal(streams[0].id, 1);
+});
+
+test("Today status totals exclude archived streams and session families, and restoring them restores counts", () => {
+  const sessions = [
+    { id: "active", status: "running", boardStreamId: 1 },
+    { id: "archived", status: "running", boardStreamId: 2 },
+    { id: "parent", status: "idle", boardStreamId: 3 },
+    { id: "child", status: "running", boardStreamId: 3 },
+  ];
+  const edges = [{ parent: "parent", child: "child", kind: "delegated" }];
+  const hidden = [
+    { kind: "stream", id: "2" },
+    { kind: "session", id: "parent" },
+  ];
+  assert.deepEqual(todayStatusCounts(sessions, edges, hidden), {
+    all: 1,
+    running: 1,
+    unread: 0,
+  });
+  assert.deepEqual(
+    todayStatusCounts(sessions, edges, [{ kind: "session", id: "archived" }]),
+    { all: 3, running: 2, unread: 0 },
+  );
+  assert.deepEqual(todayStatusCounts(sessions, edges, []), {
+    all: 4,
+    running: 3,
+    unread: 0,
+  });
+  assert.equal(sessions.length, 4);
 });

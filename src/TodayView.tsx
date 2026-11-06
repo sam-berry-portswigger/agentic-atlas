@@ -21,6 +21,7 @@ import { sessionOpenLink } from "../shared/session-links.js";
 import {
   compareStreamActivity,
   focusedSessions,
+  todayStatusCounts,
   relevantArchives,
   openTaskStreamIds,
   compareTasks,
@@ -57,10 +58,7 @@ import {
 import { api, type SyncJob } from "./api";
 import { SyncStatus, SyncWarnings, syncPhases } from "./SyncProgress";
 import { notify } from "./ui/notify";
-import {
-  sessionReadTargets,
-  unreadFamilyCount,
-} from "../shared/session-read.js";
+import { sessionReadTargets } from "../shared/session-read.js";
 import { familyRoots, isFamilyEdge } from "../shared/today-layout.js";
 import {
   displaySessionStatus,
@@ -354,6 +352,11 @@ export default function TodayView({
       `${s.title} ${s.project} ${s.provider}`
         .toLowerCase()
         .includes(query.toLowerCase()));
+  const statusCounts = todayStatusCounts(
+    allSessions,
+    edgeList,
+    data?.visibility || [],
+  );
   const matched = sessions.filter(matches);
   const forest = familyRoots(sessions, edgeList);
   // Filter conversations as families so parent cards retain their disclosure
@@ -859,13 +862,7 @@ export default function TodayView({
               </span>
               <span>
                 <Text component="span" fw={600} size="xl" display="block">
-                  {data
-                    ? key === "all"
-                      ? allSessions.length
-                      : key === "unread"
-                        ? unreadFamilyCount(sessions, edgeList)
-                        : allSessions.filter((s) => s.status === key).length
-                    : "—"}
+                  {data ? statusCounts[key as keyof typeof statusCounts] : "—"}
                 </Text>
                 <Text component="span" size="xs" c="dimmed">
                   {label}
@@ -897,7 +894,7 @@ export default function TodayView({
             <p>
               Most active today{" "}
               <span>
-                · {visible.length} of {allSessions.length} sessions in view
+                · {visible.length} of {sessions.length} sessions in view
               </span>
             </p>
           </div>

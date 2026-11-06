@@ -1,3 +1,4 @@
+import { unreadFamilyCount } from "./session-read.js";
 import { familyRoots } from "./today-layout.js";
 
 // Persistent archive preferences are shown only when they affect this snapshot.
@@ -88,4 +89,14 @@ export function compareStreamActivity(a, b) {
     (b.activity?.latest || 0) - (a.activity?.latest || 0) ||
     (a.name || "").localeCompare(b.name || "")
   );
+}
+
+// Status badges describe the same unarchived sessions as the Today cards.
+export function todayStatusCounts(sessions, edges, hidden = []) {
+  const current = focusedSessions(sessions, edges, hidden);
+  return {
+    all: current.length,
+    running: current.filter((s) => s.status === "running").length,
+    unread: unreadFamilyCount(current, edges),
+  };
 }
