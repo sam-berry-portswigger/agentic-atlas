@@ -1,23 +1,12 @@
-import {
-  ActionIcon,
-  Alert,
-  Button,
-  Group,
-  Skeleton,
-  Stack,
-  Text,
-} from "@mantine/core";
-import { X } from "lucide-react";
+import { Alert, Button, Skeleton, Stack, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { readNDJSON } from "../shared/stream.js";
 
 export default function SessionBrief({
   session,
-  onClose,
 }: {
   session: { id: string; title: string };
-  onClose: () => void;
 }) {
   const [text, setText] = useState("");
   const [asOf, setAsOf] = useState("");
@@ -78,24 +67,12 @@ export default function SessionBrief({
     <Stack
       component="section"
       aria-label="Session TLDR"
+      id={`session-tldr-${session.id}`}
       aria-busy={loading}
       gap="sm"
       mt="md"
       mb="lg"
     >
-      <Group justify="space-between">
-        <Text size="sm" fw={600}>
-          TLDR
-        </Text>
-        <ActionIcon
-          variant="subtle"
-          color="gray"
-          aria-label="Close session TLDR"
-          onClick={onClose}
-        >
-          <X size={15} />
-        </ActionIcon>
-      </Group>
       {error ? (
         <Alert color="red" title="Couldn’t prepare the TLDR">
           {error}

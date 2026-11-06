@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import TaskImageViewer from "./TaskImageViewer";
 import {
   ActionIcon,
   Button,
@@ -5,6 +7,7 @@ import {
   Group,
   Stack,
   Text,
+  UnstyledButton,
 } from "@mantine/core";
 import { Paperclip, X } from "lucide-react";
 export type TaskImage = {
@@ -43,78 +46,116 @@ export default function TaskImages({
   onChange,
   onFiles,
   loading = false,
+  onAnnotate,
+  onViewerChange,
 }: {
   images: TaskImage[];
   taskId?: string;
   onChange?: (images: TaskImage[]) => void;
   onFiles?: (files: File[]) => void;
   loading?: boolean;
+  onAnnotate?: (image: TaskImage) => Promise<void>;
+  onViewerChange?: (open: boolean) => void;
 }) {
+  const [viewing, setViewing] = useState<TaskImage | null>(null);
+  useEffect(() => {
+    onViewerChange?.(!!viewing);
+    return () => onViewerChange?.(false);
+  }, [viewing, onViewerChange]);
+  const source = (image: TaskImage) =>
+    image.id
+      ? `/api/today/tasks/${encodeURIComponent(taskId || "")}/images/${encodeURIComponent(image.id)}`
+      : `data:image/png;base64,${image.data}`;
+  async function saveCopy(file: File) {
+    const [copy] = await pastedImages([file]);
+    if (
+      images.length >= 4 ||
+      images.reduce((total, image) => total + (image.bytes || 0), 0) +
+        (copy.bytes || 0) >
+        8 * 1024 * 1024
+    )
+      throw Error(
+        "This task has reached its attachment limit (four PNGs, 8 MB total). Remove an attachment before saving a marked-up copy. Your original image is unchanged.",
+      );
+    if (onChange) onChange([...images, copy]);
+    else if (onAnnotate) await onAnnotate(copy);
+  }
   if (!images.length && !onChange) return null;
   return (
-    <Stack gap="xs" mt="md" component="section" aria-label="Task images">
-      <Group justify="space-between">
-        <Text size="sm" fw={500}>
-          Images{images.length ? ` (${images.length})` : ""}
-        </Text>
-        {onFiles && (
-          <FileButton accept="image/png" multiple onChange={onFiles}>
-            {(props) => (
-              <Button
-                {...props}
-                size="xs"
-                variant="default"
-                loading={loading}
-                leftSection={<Paperclip size={13} />}
-              >
-                Attach PNG
-              </Button>
-            )}
-          </FileButton>
-        )}
-      </Group>
-      {onChange && (
-        <Text size="xs" c="dimmed">
-          Paste a PNG anywhere in this form, or attach a file. Up to 4 images, 4
-          MB each.
-        </Text>
+    <>
+      {viewing && (
+        <TaskImageViewer
+          key={viewing.id || viewing.name}
+          src={source(viewing)}
+          name={viewing.name}
+          onClose={() => setViewing(null)}
+          onSave={onChange || onAnnotate ? saveCopy : undefined}
+          draft={!!onChange}
+        />
       )}
-      <div className="td-task-images">
-        {images.map((image, index) => {
-          const src = image.id
-            ? `/api/today/tasks/${encodeURIComponent(taskId || "")}/images/${encodeURIComponent(image.id)}`
-            : `data:image/png;base64,${image.data}`;
-          return (
-            <div className="td-task-image" key={image.id || index}>
-              <a
-                href={src}
-                target="_blank"
-                rel="noreferrer"
-                title="Open full image"
-              >
-                <img src={src} alt={image.name} />
-              </a>
-              <Group gap="xs" justify="space-between" wrap="nowrap">
-                <Text size="xs" truncate>
-                  {image.name}
-                </Text>
-                {onChange && (
-                  <ActionIcon
-                    variant="subtle"
-                    color="gray"
-                    aria-label={`Remove image: ${image.name}`}
-                    onClick={() =>
-                      onChange(images.filter((_, i) => i !== index))
-                    }
-                  >
-                    <X size={14} />
-                  </ActionIcon>
-                )}
-              </Group>
-            </div>
-          );
-        })}
-      </div>
-    </Stack>
+      <Stack gap="xs" mt="md" component="section" aria-label="Task images">
+        <Group justify="space-between">
+          <Text size="sm" fw={500}>
+            Images{images.length ? ` (${images.length})` : ""}
+          </Text>
+          {onFiles && (
+            <FileButton accept="image/png" multiple onChange={onFiles}>
+              {(props) => (
+                <Button
+                  {...props}
+                  size="xs"
+                  variant="default"
+                  loading={loading}
+                  leftSection={<Paperclip size={13} />}
+                >
+                  Attach PNG
+                </Button>
+              )}
+            </FileButton>
+          )}
+        </Group>
+        {onChange && (
+          <Text size="xs" c="dimmed">
+            Paste a PNG anywhere in this form, or attach a file. Up to 4 images,
+            4 MB each.
+          </Text>
+        )}
+        <div className="td-task-images">
+          {images.map((image, index) => {
+            const src = source(image);
+            return (
+              <div className="td-task-image" key={image.id || index}>
+                <UnstyledButton
+                  type="button"
+                  className="td-task-image-open"
+                  aria-label={`Expand image: ${image.name}`}
+                  title="Expand image"
+                  onClick={() => setViewing(image)}
+                >
+                  <img src={src} alt={image.name} />
+                </UnstyledButton>
+                <Group gap="xs" justify="space-between" wrap="nowrap">
+                  <Text size="xs" truncate>
+                    {image.name}
+                  </Text>
+                  {onChange && (
+                    <ActionIcon
+                      variant="subtle"
+                      color="gray"
+                      aria-label={`Remove image: ${image.name}`}
+                      onClick={() =>
+                        onChange(images.filter((_, i) => i !== index))
+                      }
+                    >
+                      <X size={14} />
+                    </ActionIcon>
+                  )}
+                </Group>
+              </div>
+            );
+          })}
+        </div>
+      </Stack>
+    </>
   );
 }

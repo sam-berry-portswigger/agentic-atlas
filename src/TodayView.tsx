@@ -2,6 +2,7 @@ import { ActionIcon, Button } from "@mantine/core";
 import {
   Badge as CountBadge,
   Modal,
+  ScrollArea,
   Drawer,
   SegmentedControl,
   Select,
@@ -32,6 +33,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   ArrowUpRight,
+  PanelRight,
   Check,
   ChevronDown,
   CircleHelp,
@@ -323,6 +325,8 @@ export default function TodayView({
       document.removeEventListener("visibilitychange", show);
     };
   }, []);
+  const [archiveSession, setArchiveSession] = useState<Session | null>(null);
+  const [imageOverlayOpen, setImageOverlayOpen] = useState(false);
   const [briefSession, setBriefSession] = useState<string | null>(null);
   const [renameSession, setRenameSession] = useState<string | null>(null);
   useEffect(() => setRenameSession(null), [selected]);
@@ -427,7 +431,10 @@ export default function TodayView({
       setRebuilding(false);
     }
   }
-  const selectedSession = selected ? byId.get(selected) : null;
+  const selectedSession = selected
+    ? allSessions.find((s) => s.id === selected) ||
+      (archiveSession?.id === selected ? archiveSession : null)
+    : null;
   const selectedDisplayParent = selectedSession
     ? forest.parent.get(selectedSession.id) || selectedSession.parent
     : null;
@@ -576,6 +583,70 @@ export default function TodayView({
       notify("Shared board updated.");
     } catch (e) {
       setTaskError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+  function taskSession(id: string) {
+    return (
+      allSessions.find((s) => s.id === id) ||
+      taskLinkOptions.find((s) => s.id === id) || {
+        id,
+        nativeId: id.replace(/^codex:/, ""),
+        provider: id.startsWith("codex:")
+          ? ("codex" as const)
+          : ("claude" as const),
+        title: "Earlier session",
+        project: "",
+      }
+    );
+  }
+  async function openTaskSession(id: string) {
+    const live = allSessions.find((s) => s.id === id);
+    if (live) {
+      setArchiveSession(null);
+      setTaskOpened(false);
+      selectSession(id);
+      return;
+    }
+    try {
+      const result = await api<{
+        sessions: (SessionOption & { updated?: string })[];
+      }>("today/sessions/search", { ids: [id] });
+      const session = result.sessions.find((s) => s.id === id);
+      if (!session)
+        throw Error(
+          "This session is no longer indexed. Its link is kept on the task.",
+        );
+      setArchiveSession({
+        ...session,
+        updated: session.updated || "",
+        lastRequest: "",
+        status: "unknown",
+        statusAt: null,
+        basis: "Archived conversation. Live activity is unavailable.",
+        inclusion: "archive",
+        child: !!session.parent,
+      });
+      setTaskOpened(false);
+      setSelected(id);
+      setBriefSession(null);
+    } catch (error) {
+      setTaskError((error as Error).message);
+    }
+  }
+  async function saveAnnotatedImage(image: TaskImage) {
+    if (!viewedTask) throw Error("Reopen the task before saving an image.");
+    setSaving(true);
+    try {
+      const { task } = await api<{ task: Task }>("today/tasks/update", {
+        id: viewedTask.id,
+        revision: viewedTask.revision,
+        attachments: [...(viewedTask.attachments || []), image],
+      });
+      acceptTask(task);
+      void refresh(true);
+      notify("Marked-up copy saved. Original kept.");
     } finally {
       setSaving(false);
     }
@@ -1216,7 +1287,14 @@ export default function TodayView({
               <Button
                 variant="default"
                 leftSection={<Sparkles size={14} />}
-                onClick={() => setBriefSession(selectedSession.id)}
+                disabled={selectedSession.inclusion === "archive"}
+                aria-expanded={briefSession === selectedSession.id}
+                aria-controls={`session-tldr-${selectedSession.id}`}
+                onClick={() =>
+                  setBriefSession((current) =>
+                    current === selectedSession.id ? null : selectedSession.id,
+                  )
+                }
               >
                 TLDR
               </Button>
@@ -1233,6 +1311,7 @@ export default function TodayView({
                 <Menu.Dropdown>
                   <Menu.Item
                     leftSection={<Pencil size={14} />}
+                    disabled={selectedSession.inclusion === "archive"}
                     onClick={() => setRenameSession(selectedSession.id)}
                   >
                     Rename session
@@ -1263,10 +1342,7 @@ export default function TodayView({
               </Menu>
             </Group>
             {briefSession === selectedSession.id && (
-              <SessionBrief
-                session={selectedSession}
-                onClose={() => setBriefSession(null)}
-              />
+              <SessionBrief session={selectedSession} />
             )}
             <section className="td-session-section" aria-label="Linked tasks">
               <Group justify="space-between" mb="xs">
@@ -1519,18 +1595,25 @@ export default function TodayView({
       )}
       <Modal
         opened={taskOpened}
-        onClose={() => setTaskOpened(false)}
+        size={680}
+        scrollAreaComponent={ScrollArea.Autosize}
+        onClose={() => {
+          if (!imageOverlayOpen && !saving) setTaskOpened(false);
+        }}
+        trapFocus={!imageOverlayOpen}
+        closeOnEscape={!imageOverlayOpen && !saving}
+        closeOnClickOutside={!imageOverlayOpen && !saving}
         zIndex={220}
         title={
           deleteTarget
             ? "Delete task?"
             : taskMode === "view" && viewedTask
-              ? viewedTask.title
+              ? "Task"
               : edit
                 ? "Edit task"
                 : "New task"
         }
-        closeButtonProps={{ "aria-label": "Close task" }}
+        closeButtonProps={{ "aria-label": "Close task", disabled: saving }}
         classNames={{ content: "atlas-task-modal" }}
       >
         <>
@@ -1568,72 +1651,86 @@ export default function TodayView({
             </Stack>
           ) : taskMode === "view" && viewedTask ? (
             <>
-              <div className="td-task-detail-meta">
-                <TaskOrigin origin={viewedTask.createdBy} detailed />
-                {viewedTask.suspended && (
-                  <span className="td-task-suspended">
-                    <Pause size={12} aria-hidden="true" /> Suspended
-                  </span>
-                )}
-                <span className={"td-task-status " + viewedTask.status}>
-                  {columns.find(([key]) => key === viewedTask.status)?.[1]}
-                </span>
-                {viewedTask.streamId !== null && (
-                  <span>
-                    {taskStreams.find(
-                      (stream) => stream.id === viewedTask.streamId,
-                    )?.name || "Previous work stream"}
-                  </span>
-                )}
-                {viewedTask.project && <span>{viewedTask.project}</span>}
-              </div>
-              {viewedTask.suspended && (
-                <Text size="sm" c="dimmed" mt="md">
-                  Agents skip this task until you resume it. Suspending does not
-                  interrupt work already running.
+              <h2 className="td-task-detail-title">{viewedTask.title}</h2>
+              <Group justify="space-between" wrap="nowrap" mb="md">
+                <Group gap="sm">
+                  <Select
+                    aria-label="Task status"
+                    comboboxProps={{ zIndex: 240 }}
+                    size="xs"
+                    w={145}
+                    value={viewedTask.status}
+                    data={columns.map(([value, label]) => ({ value, label }))}
+                    allowDeselect={false}
+                    disabled={saving}
+                    onChange={(value) => {
+                      if (value)
+                        void moveTask(viewedTask, value as Task["status"]);
+                    }}
+                  />
+                  {viewedTask.suspended && (
+                    <CountBadge
+                      color="gray"
+                      variant="light"
+                      leftSection={<Pause size={11} />}
+                    >
+                      Suspended
+                    </CountBadge>
+                  )}
+                </Group>
+                <Menu position="bottom-end" withinPortal zIndex={240}>
+                  <Menu.Target>
+                    <ActionIcon
+                      variant="subtle"
+                      color="gray"
+                      aria-label="More task actions"
+                      disabled={saving}
+                    >
+                      <Ellipsis size={18} />
+                    </ActionIcon>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    <Menu.Item
+                      leftSection={
+                        viewedTask.suspended ? (
+                          <Play size={14} />
+                        ) : (
+                          <Pause size={14} />
+                        )
+                      }
+                      onClick={() => void toggleTaskSuspension(viewedTask)}
+                    >
+                      {viewedTask.suspended ? "Resume task" : "Suspend task"}
+                    </Menu.Item>
+                    <Menu.Divider />
+                    <Menu.Item
+                      color="red"
+                      leftSection={<Trash2 size={14} />}
+                      onClick={() => {
+                        setDeleteTarget(viewedTask);
+                        setTaskError("");
+                      }}
+                    >
+                      Delete task
+                    </Menu.Item>
+                  </Menu.Dropdown>
+                </Menu>
+              </Group>
+              {(viewedTask.streamId !== null || viewedTask.project) && (
+                <Text size="xs" c="dimmed" mb="lg">
+                  {[
+                    taskStreams.find((s) => s.id === viewedTask.streamId)?.name,
+                    viewedTask.project,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </Text>
               )}
-              {viewedTask.createdSession &&
-                (() => {
-                  const id = viewedTask.createdSession;
-                  const session = allSessions.find((s) => s.id === id) ||
-                    taskLinkOptions.find((s) => s.id === id) || {
-                      id,
-                      nativeId: id.replace(/^codex:/, ""),
-                      provider: id.startsWith("codex:")
-                        ? ("codex" as const)
-                        : ("claude" as const),
-                      title: id.startsWith("codex:")
-                        ? "Codex session"
-                        : "Claude session",
-                      project: viewedTask.project,
-                    };
-                  const target = sessionOpenLink(session, byId);
-                  return (
-                    <section className="td-task-detail-links td-task-creator">
-                      <h3>Created in</h3>
-                      {target?.href ? (
-                        <a href={target.href}>
-                          <span>
-                            {session?.title}
-                            <small>
-                              {session?.provider === "codex"
-                                ? "Codex"
-                                : "Claude"}
-                              {session?.project ? " · " + session.project : ""}
-                            </small>
-                          </span>
-                          <ArrowUpRight size={15} />
-                        </a>
-                      ) : (
-                        <Button variant="default" onClick={() => void copy(id)}>
-                          <Copy size={14} />
-                          Copy creating session ID
-                        </Button>
-                      )}
-                    </section>
-                  );
-                })()}
+              {viewedTask.suspended && (
+                <Text size="xs" c="dimmed" mb="md">
+                  Agents skip this task until you resume it.
+                </Text>
+              )}
               <div className="td-task-detail-notes">
                 {viewedTask.notes ? (
                   <Markdown>{viewedTask.notes}</Markdown>
@@ -1641,94 +1738,68 @@ export default function TodayView({
                   <p className="td-task-no-notes">No notes yet.</p>
                 )}
               </div>
-              {viewedTask.sessions.some(
-                (id) => id !== viewedTask.createdSession,
-              ) && (
-                <section className="td-task-detail-links">
-                  <h3>Linked sessions</h3>
-                  {viewedTask.sessions
-                    .filter((id) => id !== viewedTask.createdSession)
-                    .map((id) => {
-                      const session =
-                        allSessions.find((s) => s.id === id) ||
-                        taskLinkOptions.find((s) => s.id === id);
-                      const target = session
-                        ? sessionOpenLink(
-                            session,
-                            new Map(allSessions.map((s) => [s.id, s])),
-                          )
-                        : null;
-                      return (
-                        <div key={id}>
-                          {target?.href ? (
-                            <a href={target.href}>
-                              <span>
-                                {session?.title}
-                                <small>
-                                  {session?.provider === "claude"
-                                    ? "Claude"
-                                    : "Codex"}
-                                  {session?.project
-                                    ? " · " + session.project
-                                    : ""}
-                                </small>
-                              </span>
-                              <ArrowUpRight size={15} />
-                            </a>
-                          ) : (
-                            <span>
-                              {session?.title || "Earlier session"}
-                              <small>{id}</small>
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
+              {(viewedTask.createdSession ||
+                viewedTask.sessions.length > 0) && (
+                <section
+                  className="td-task-detail-links"
+                  aria-label="Task sessions"
+                >
+                  <h3>Sessions</h3>
+                  {[
+                    ...new Set([
+                      ...(viewedTask.createdSession
+                        ? [viewedTask.createdSession]
+                        : []),
+                      ...viewedTask.sessions,
+                    ]),
+                  ].map((id) => {
+                    const session = taskSession(id);
+                    return (
+                      <UnstyledButton
+                        key={id}
+                        className="td-task-session-link"
+                        onClick={() => void openTaskSession(id)}
+                      >
+                        <span>
+                          {session.title}
+                          <small>
+                            {id === viewedTask.createdSession
+                              ? "Created here · "
+                              : ""}
+                            {session.provider === "claude" ? "Claude" : "Codex"}
+                            {session.project ? " · " + session.project : ""}
+                          </small>
+                        </span>
+                        <PanelRight size={16} aria-hidden="true" />
+                      </UnstyledButton>
+                    );
+                  })}
                 </section>
               )}
               <TaskImages
                 images={viewedTask.attachments || []}
                 taskId={viewedTask.id}
+                onAnnotate={saveAnnotatedImage}
+                onViewerChange={setImageOverlayOpen}
               />
+              {taskError && (
+                <Text c="red" size="sm" role="alert" mt="md">
+                  {taskError}
+                </Text>
+              )}
               <div className="td-task-view-footer">
-                <small>Updated {age(viewedTask.updated)}</small>
-                <Group gap="xs" className="td-task-actions" justify="flex-end">
-                  <Button
-                    variant="default"
-                    loading={saving}
-                    leftSection={
-                      viewedTask.suspended ? (
-                        <Play size={14} />
-                      ) : (
-                        <Pause size={14} />
-                      )
-                    }
-                    onClick={() => void toggleTaskSuspension(viewedTask)}
-                  >
-                    {viewedTask.suspended ? "Resume task" : "Suspend task"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    color="red"
-                    onClick={() => {
-                      setDeleteTarget(viewedTask);
-                      setTaskError("");
-                    }}
-                    leftSection={<Trash2 size={14} />}
-                  >
-                    Delete
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="default"
-                    leftSection={<Pencil size={14} />}
-                    onClick={() =>
-                      openTask(viewedTask, undefined, "todo", true)
-                    }
-                  >
-                    Edit task
-                  </Button>
-                </Group>
+                <Stack gap={4}>
+                  <TaskOrigin origin={viewedTask.createdBy} detailed />
+                  <small>Updated {age(viewedTask.updated)}</small>
+                </Stack>
+                <Button
+                  variant="default"
+                  disabled={saving}
+                  leftSection={<Pencil size={14} />}
+                  onClick={() => openTask(viewedTask, undefined, "todo", true)}
+                >
+                  Edit task
+                </Button>
               </div>
             </>
           ) : (
@@ -1815,6 +1886,7 @@ export default function TodayView({
                   onChange={setTaskImages}
                   onFiles={(files) => void addTaskImages(files)}
                   loading={imagesLoading}
+                  onViewerChange={setImageOverlayOpen}
                 />
                 <SessionPicker
                   sessions={allSessions}
