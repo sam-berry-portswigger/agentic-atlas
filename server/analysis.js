@@ -1,3 +1,4 @@
+import { nextWorkstreamId } from "./workstream-identity.js";
 import { balancedObjectiveTopics } from "./balanced-groups.js";
 import { OBJECTIVE_POLICY } from "./conversation-objectives.js";
 import { refineStreamGoals } from "./refine-streams.js";
@@ -449,9 +450,7 @@ export async function analyseArchive(
     }
     topics = [...owners.values()].filter((t) => t.rows.length);
   }
-  let nextId =
-    (db.prepare("SELECT max(id) AS id FROM analysis_topics").get().id ?? -1) +
-    1;
+  let nextId = nextWorkstreamId(db);
   const usedColors = new Set(topics.map((t) => t.color).filter(Boolean));
   for (const topic of topics)
     if (topic.id === undefined) {

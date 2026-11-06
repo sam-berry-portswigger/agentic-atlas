@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { balancedObjectiveGroup } from "./balanced-groups.js";
+import { nextWorkstreamId } from "./workstream-identity.js";
 import { shortName } from "./names.js";
 import { OBJECTIVE_POLICY } from "./conversation-objectives.js";
 import { activeAnalysis, analysisFingerprint } from "./analysis-store.js";
@@ -319,6 +320,7 @@ export async function updateCatalogue(
         )
         .get()?.value || "{}",
     );
+    let nextId = nextWorkstreamId(db);
     let fallback = topics.find((t) => t.background);
     const assignments = changed.map((item) => {
       const old = oldBySession.get(item.session);
@@ -351,7 +353,7 @@ export async function updateCatalogue(
         !item.conversation.objectiveUnclear
       ) {
         topic = {
-          id: Math.max(-1, ...topics.map((t) => t.id)) + 1,
+          id: nextId++,
           name: shortName(item.conversation.objective, 80),
           description: item.conversation.objective,
           center: item.conversation.vector,
@@ -365,9 +367,7 @@ export async function updateCatalogue(
         if (!fallback) {
           const used = new Set(topics.map((t) => t.color));
           fallback = {
-            id:
-              (db.prepare("SELECT max(id) n FROM analysis_topics").get().n ??
-                -1) + 1,
+            id: nextId++,
             name: "Other sessions",
             description: OTHER_DESCRIPTION,
             color: nextTopicColor(used),

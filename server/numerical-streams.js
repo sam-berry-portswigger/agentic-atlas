@@ -1,3 +1,4 @@
+import { nextWorkstreamId } from "./workstream-identity.js";
 import { fileURLToPath } from "node:url";
 import { runMap } from "./map-runner.js";
 import { activeAnalysis } from "./analysis-store.js";
@@ -59,8 +60,7 @@ export function publishDensityGroups(db, version, ids, result) {
   });
   for (const row of rows)
     assignments.set(row.session, manual.get(row.session) ?? row.topic_id);
-  let nextId =
-    (db.prepare("SELECT max(id) id FROM analysis_topics").get().id ?? -1) + 1;
+  let nextId = nextWorkstreamId(db);
   const protectedIds = new Set(manual.values()),
     used = new Set(previous.map((t) => t.color)),
     reused = new Set();
@@ -96,18 +96,16 @@ export function publishDensityGroups(db, version, ids, result) {
     const overlap = new Map();
     for (const row of members)
       overlap.set(row.topic_id, (overlap.get(row.topic_id) || 0) + 1);
-    const prior =
-      metadata.densityPolicy &&
-      [...overlap]
-        .filter(
-          ([id, count]) =>
-            !protectedIds.has(id) &&
-            !reused.has(id) &&
-            label < 0 === isFallback(previousById.get(id) || {}) &&
-            count / members.length >= 0.5 &&
-            count / oldCounts.get(id) >= 0.5,
-        )
-        .sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+    const prior = [...overlap]
+      .filter(
+        ([id, count]) =>
+          count === oldCounts.get(id) &&
+          !protectedIds.has(id) &&
+          !reused.has(id) &&
+          label < 0 === isFallback(previousById.get(id) || {}) &&
+          count / members.length >= 0.5,
+      )
+      .sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
     const id = prior ? prior[0] : nextId++,
       color = prior ? previousById.get(id).color : nextTopicColor(used);
     reused.add(id);
@@ -115,8 +113,7 @@ export function publishDensityGroups(db, version, ids, result) {
     const previousTopic = prior ? previousById.get(id) : null;
     const keepName =
       label >= 0 &&
-      prior?.[1] === members.length &&
-      prior?.[1] === oldCounts.get(id) &&
+      !!prior &&
       previousTopic?.description?.trim() &&
       previousTopic.description !== DENSITY_PLACEHOLDER_DESCRIPTION;
     topics.push({
@@ -140,6 +137,54 @@ export function publishDensityGroups(db, version, ids, result) {
       center,
     });
     for (const row of members) assignments.set(row.session, id);
+  }
+  // If a split leaves unplotted sessions behind, they are another fragment,
+  // not the owner of the old identity and its task board.
+  for (const previousTopic of previous) {
+    if (
+      new Set(manual.values()).has(previousTopic.id) ||
+      isFallback(previousTopic) ||
+      (metadata.residualTopicIds || []).includes(previousTopic.id)
+    )
+      continue;
+    const remaining = rows.filter(
+      (row) =>
+        row.topic_id === previousTopic.id &&
+        !projectedIds.has(row.representative_id) &&
+        !manual.has(row.session),
+    );
+    if (
+      !remaining.length ||
+      !rows.some(
+        (row) =>
+          row.topic_id === previousTopic.id &&
+          assignments.get(row.session) !== previousTopic.id,
+      )
+    )
+      continue;
+    const id = nextId++,
+      center = centroid(remaining);
+    const representative = [...remaining].sort(
+      (a, b) =>
+        cosine(vectorArray(b.vector), center) -
+          cosine(vectorArray(a.vector), center) ||
+        a.session.localeCompare(b.session),
+    )[0];
+    const color = nextTopicColor(used);
+    used.add(color);
+    topics.push({
+      id,
+      name: resolveName(
+        representative.session,
+        representative.title,
+        representative.project,
+      ),
+      description: DENSITY_PLACEHOLDER_DESCRIPTION,
+      color,
+      center,
+    });
+    for (const row of remaining) assignments.set(row.session, id);
+    protectedIds.delete(previousTopic.id);
   }
   const put = db.prepare(
     "INSERT OR REPLACE INTO analysis_topics(version,id,name,description,color,centroid) VALUES(?,?,?,?,?,?)",
@@ -172,45 +217,26 @@ export function publishDensityGroups(db, version, ids, result) {
   );
   for (const [id, members] of membersByTopic)
     recenter.run(vectorBuffer(centroid(members)), version, id);
-  // An unplotted conversation keeps its assignment, but cannot retain the old
-  // name of a large historical group whose other members have moved elsewhere.
-  for (const [id, members] of membersByTopic) {
-    if (
-      new Set(manual.values()).has(id) ||
-      isFallback(previousById.get(id) || {}) ||
-      (metadata.residualTopicIds || []).includes(id) ||
-      topics.some((t) => t.id === id) ||
-      members.length === oldCounts.get(id)
-    )
-      continue;
-    const center = centroid(members);
-    const representative = [...members].sort(
-      (a, b) =>
-        cosine(vectorArray(b.vector), center) -
-          cosine(vectorArray(a.vector), center) ||
-        a.session.localeCompare(b.session),
-    )[0];
-    db.prepare(
-      "UPDATE analysis_topics SET name=?,description=? WHERE version=? AND id=?",
-    ).run(
-      resolveName(
-        representative.session,
-        representative.title,
-        representative.project,
-      ),
-      DENSITY_PLACEHOLDER_DESCRIPTION,
-      version,
-      id,
-    );
-  }
   // Only derived catalogue caches are discarded; archives, overrides, tasks,
   // original embeddings and stored map coordinates are left intact.
   const remove = db.prepare(
     "DELETE FROM analysis_topics WHERE version=? AND id=?",
   );
   for (const topic of previous)
-    if (!protectedIds.has(topic.id) && !membersByTopic.has(topic.id))
+    if (!protectedIds.has(topic.id) && !membersByTopic.has(topic.id)) {
+      db.prepare(
+        "INSERT OR REPLACE INTO retired_workstreams VALUES(?,?,?,?,?)",
+      ).run(
+        topic.id,
+        topic.name,
+        topic.description,
+        topic.color,
+        JSON.stringify(
+          rows.filter((r) => r.topic_id === topic.id).map((r) => r.session),
+        ),
+      );
       remove.run(version, topic.id);
+    }
   for (const table of [
     "analysis_work_members",
     "analysis_work",

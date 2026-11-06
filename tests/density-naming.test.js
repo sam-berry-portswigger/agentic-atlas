@@ -174,6 +174,7 @@ test("fixed density naming changes only names and descriptions, preserves manual
     });
     const refreshed = async (_db, _system, prompt) => {
       calls++;
+      assert.equal(JSON.parse(prompt).topics[0].existingName, "Belfry");
       assert.ok(
         JSON.parse(prompt).topics.some((t) =>
           t.sessions.some((s) => s.sessionName === "Belfry configuration"),
@@ -198,9 +199,30 @@ test("fixed density naming changes only names and descriptions, preserves manual
     });
     assert.equal(
       db.prepare("SELECT name FROM analysis_topics WHERE id=10").get().name,
-      "Belfry configuration",
+      "Belfry",
     );
     assert.deepEqual(invariant(), before);
+    db.prepare("UPDATE chunks SET text=? WHERE session='import'").run(
+      "The work now covers importing documents and distributing organisation policy to clients.",
+    );
+    await nameDensityGroups(db, {
+      refresh: true,
+      nameGenerator: async (_db, _system, prompt) => ({
+        topics: JSON.parse(prompt).topics.map((t) => ({
+          key: t.key,
+          name: "Belfry configuration distribution",
+          description:
+            "Import documents and distribute organisation policy to clients.",
+          background: false,
+          renameReason:
+            "The scope now includes distributing organisation policy to clients as well as local setup.",
+        })),
+      }),
+    });
+    assert.equal(
+      db.prepare("SELECT name FROM analysis_topics WHERE id=10").get().name,
+      "Belfry configuration distribution",
+    );
   } finally {
     db.close();
   }

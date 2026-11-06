@@ -1,5 +1,6 @@
 import { taskImages, planTaskImages, saveTaskImages } from "./task-images.js";
 import { activeAnalysis } from "./analysis-store.js";
+import { workstreamResolver } from "./workstream-identity.js";
 import { randomUUID } from "node:crypto";
 export function initTodaySchema(db) {
   db.exec(
@@ -77,12 +78,10 @@ export function taskWorkstreams(db, tasks) {
   if (!ids.length) return [];
   const active = activeAnalysis(db)?.id;
   if (!active) return [];
-  const topic = db.prepare(`SELECT t.id,t.name,t.description,t.color
-    FROM analysis_topics t JOIN analysis_runs r ON r.id=t.version
-    WHERE t.id=? ORDER BY (t.version=?) DESC,r.created_at DESC,r.id DESC LIMIT 1`);
+  const topic = workstreamResolver(db, active);
   return ids.map(
     (id) =>
-      topic.get(id, active) || {
+      topic(id) || {
         id,
         name: `Previous work stream ${id}`,
         description: "",
@@ -123,17 +122,30 @@ export function createTodayService(
         const project = linkedProject(sid);
         return project !== null && permitted(project, allowedProjects);
       }));
-  const readTask = (row) => {
+  const readTask = (row, resolveStream = null) => {
     const task = taskRow(row);
-    return task ? { ...task, attachments: taskImages(db, task.id) } : null;
+    if (!task) return null;
+    const version = activeAnalysis(db)?.id;
+    const stream =
+      version && task.streamId != null
+        ? (resolveStream || workstreamResolver(db, version))(task.streamId)
+        : null;
+    return {
+      ...task,
+      streamId: stream?.id ?? task.streamId,
+      attachments: taskImages(db, task.id),
+    };
   };
-  const visibleTasks = ({ includeSuspended = false } = {}) =>
-    db
+  const visibleTasks = ({ includeSuspended = false } = {}) => {
+    const version = activeAnalysis(db)?.id;
+    const resolveStream = version ? workstreamResolver(db, version) : null;
+    return db
       .prepare("SELECT * FROM today_tasks ORDER BY created")
       .all()
-      .map(readTask)
+      .map((row) => readTask(row, resolveStream))
       .filter(canReadTask)
       .filter((task) => actor !== "ai" || includeSuspended || !task.suspended);
+  };
   const listTasks = (options) => {
     const tasks = visibleTasks(options);
     return { tasks, taskWorkstreams: taskWorkstreams(db, tasks) };
@@ -170,8 +182,14 @@ export function createTodayService(
       if (linkedProject !== null) checkProject(linkedProject);
       else if (allowedProjects !== null) fail("Unknown session link.", 403);
     }
-    const streamId =
+    const requestedStreamId =
       body.streamId === undefined ? (old?.streamId ?? null) : body.streamId;
+    const version = activeAnalysis(db)?.id;
+    const streamId =
+      Number.isSafeInteger(requestedStreamId) && version
+        ? (workstreamResolver(db, version)(requestedStreamId)?.id ??
+          requestedStreamId)
+        : requestedStreamId;
     if (streamId !== null) {
       if (!Number.isSafeInteger(streamId) || streamId < 1)
         fail("Invalid work stream.");

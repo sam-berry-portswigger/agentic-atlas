@@ -1,3 +1,4 @@
+import { createTodayService, initTodaySchema } from "../server/today-store.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
@@ -87,93 +88,59 @@ function fixture() {
   }
   return db;
 }
-test("scoped labels are synthesized from dialogue, cached, and shared by Today, map and detail", async () => {
+test("Today, map, detail and tasks use one stable name across dates and changing dialogue", async () => {
   const db = fixture();
   try {
-    db.prepare("UPDATE chunks SET text=? WHERE session='s11'").run(
-      "Configure Belfry organisation policies and synchronise the central configuration server with Burp.",
+    initTodaySchema(db);
+    const service = createTodayService(db);
+    const task = service.createTask({ title: "Follow up", streamId: 1 }).task;
+    const before = JSON.stringify(
+      db.prepare("SELECT * FROM analysis_members").all(),
     );
-    const invariant = () =>
-      JSON.stringify({
-        topics: db.prepare("SELECT * FROM analysis_topics").all(),
-        members: db.prepare("SELECT * FROM analysis_members").all(),
-        chunks: db.prepare("SELECT * FROM chunks").all(),
-      });
-    const before = invariant(),
-      scope = { start: "2026-11-05T00:00:00Z", end: "2026-11-06T00:00:00Z" };
-    const first = readMap(db, scope, "e");
-    assert.notEqual(
-      first.points[0].topicName,
-      "Local belfry setup",
-      "missing semantic names must never be replaced by a copied title",
-    );
-    let calls = 0;
-    const model = async (_db, system, prompt) => {
-      calls++;
-      assert.match(system, /conversation content/);
-      const topics = JSON.parse(prompt).topics;
-      assert.ok(
-        topics.every((t) =>
-          t.sessions.every((s) =>
-            s.dialogue.some((m) => /organisation policies/.test(m.text)),
-          ),
-        ),
-      );
-      assert.ok(
-        topics.every((t) =>
-          t.sessions.every((s) => s.sessionName === "Local belfry setup"),
-        ),
-      );
-      return {
-        topics: topics.map((t) => ({
-          key: t.key,
-          name: "Belfry configuration management",
-          description:
-            "Central organisation policies and configuration synchronisation between Belfry and Burp.",
-          background: false,
-        })),
-      };
+    const scope = {
+      start: "2026-11-05T00:00:00Z",
+      end: "2026-11-06T00:00:00Z",
     };
-    await refreshRequestedTopicNames(db, { nameGenerator: model });
-    const day = readMap(db, scope, "e");
-    assert.equal(day.points[0].topicName, "Belfry configuration management");
-    const sessions = [{ id: "s11", title: "Local belfry setup" }],
-      today = attachTodayStreams(db, sessions, [], scope);
+    const model = () => {
+      throw Error("Reading a filtered view must not rename workstreams");
+    };
+    for (const filter of [scope, {}]) {
+      const map = await withTopicNames(db, () => readMap(db, filter, "e"), {
+        nameGenerator: model,
+      });
+      const today = attachTodayStreams(db, [{ id: "s11" }], [], filter);
+      const label = service.listTasks().taskWorkstreams[0].name;
+      assert.equal(label, "Historical Burp Tooling");
+      assert.equal(
+        map.points.find((p) => p.session === "s11").topicName,
+        label,
+      );
+      assert.equal(
+        today.workstreams.find((s) => s.id === task.streamId).name,
+        label,
+      );
+      assert.equal(
+        readTopic(db, filter, { kind: "stream", streamId: 1 }).title,
+        label,
+      );
+    }
+    db.prepare(
+      "UPDATE chunks SET text='New implementation and verification phase' WHERE session='s11'",
+    ).run();
     assert.equal(
-      today.workstreams.find((t) => t.id === 1).name,
-      "Belfry configuration management",
+      readMap(db, scope, "e").points[0].topicName,
+      "Historical Burp Tooling",
     );
-    assert.equal(today.workstreams.find((t) => t.id === 1).background, false);
     assert.equal(
-      readTopic(db, scope, { kind: "stream", streamId: 1 }).title,
-      "Belfry configuration management",
+      JSON.stringify(db.prepare("SELECT * FROM analysis_members").all()),
+      before,
     );
-    await refreshRequestedTopicNames(db, { nameGenerator: model });
-    assert.equal(calls, 1);
-    assert.equal(invariant(), before);
-    db.prepare("INSERT INTO chunks VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run(
-      "future",
-      "s11",
-      "p",
-      "Local belfry setup",
-      "user",
-      "2026-11-07T08:00:00Z",
-      "Unrelated future project about billing",
-      vectorBuffer([1, 0]),
-      "e",
-      null,
-      null,
-      1,
-    );
-    db.prepare("INSERT INTO analysis_members VALUES(?,?,?,?,?)").run(
-      "v",
-      "future",
-      1,
-      null,
-      null,
+    assert.equal(
+      db.prepare("SELECT count(*) n FROM analysis_name_cache").get().n,
+      0,
     );
     const request = topicNameRequest(db, "v", { id: 1 }, ["s11"], scope);
-    assert.ok(!JSON.stringify(request.input).includes("Unrelated future"));
+    assert.ok(request.input.sessions.length);
   } finally {
     db.close();
   }
@@ -308,11 +275,16 @@ test("the existing density algorithm separates two islands formerly labelled as 
       3,
     );
     assert.equal(
-      db
-        .prepare("SELECT name FROM analysis_topics WHERE version='v' AND id=1")
-        .get().name,
-      "New Belfry planning",
+      db.prepare("SELECT name FROM retired_workstreams WHERE id=1").get().name,
+      "Historical Burp Tooling",
     );
+    const remaining = db
+      .prepare(
+        "SELECT t.id,t.name FROM analysis_topics t JOIN analysis_members m ON m.version=t.version AND m.topic_id=t.id WHERE m.chunk_id='later'",
+      )
+      .get();
+    assert.notEqual(remaining.id, 1);
+    assert.equal(remaining.name, "New Belfry planning");
     assert.equal(snapshot(), before);
     await refreshSavedDensityGroups(
       db,
@@ -424,42 +396,24 @@ test("invalid contextual output cannot partially cache siblings or change member
   }
 });
 
-test("concurrent reads coalesce naming and a changed context is resolved before returning", async () => {
+test("concurrent filtered reads retain the published name without generation", async () => {
   const db = fixture();
   try {
     const scope = {
       start: "2026-11-05T00:00:00Z",
       end: "2026-11-06T00:00:00Z",
     };
-    let calls = 0;
-    const model = async (_db, _system, prompt) => {
-      calls++;
-      if (calls === 1)
-        db.prepare("UPDATE chunks SET text=? WHERE session='s11'").run(
-          "Belfry organisation policy synchronisation now also covers signed configuration distribution.",
-        );
-      return {
-        topics: JSON.parse(prompt).topics.map((t) => ({
-          key: t.key,
-          name: calls === 1 ? "Belfry setup" : "Belfry policy distribution",
-          description:
-            "Belfry organisation policies and signed configuration distribution.",
-          background: false,
-        })),
-      };
+    const options = {
+      nameGenerator: () => {
+        throw Error("Unexpected generation");
+      },
     };
-    const options = { nameGenerator: model };
     const [a, b] = await Promise.all([
       withTopicNames(db, () => readMap(db, scope, "e"), options),
       withTopicNames(db, () => readMap(db, scope, "e"), options),
     ]);
-    assert.equal(
-      calls,
-      2,
-      "one call for each genuinely different context, shared by both readers",
-    );
-    assert.equal(a.points[0].topicName, "Belfry policy distribution");
-    assert.equal(b.points[0].topicName, "Belfry policy distribution");
+    assert.equal(a.points[0].topicName, "Historical Burp Tooling");
+    assert.equal(b.points[0].topicName, a.points[0].topicName);
   } finally {
     db.close();
   }

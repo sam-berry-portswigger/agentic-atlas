@@ -1,3 +1,7 @@
+import {
+  nextWorkstreamId,
+  workstreamResolver,
+} from "../server/workstream-identity.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
@@ -171,6 +175,85 @@ test("density publication applies labels to whole conversations while preserving
       "Import documents and validate the resulting records.",
     );
     assert.deepEqual(metadata.backgroundIds, [topic("c").topic_id]);
+    // Adding a conversation to the same density group keeps its general name.
+    for (const table of [
+      "chunks",
+      "analysis_members",
+      "analysis_conversations",
+    ]) {
+      if (table === "chunks")
+        db.exec(
+          "INSERT INTO chunks SELECT 'new', 'new', title,project,role,timestamp,text,vector,cluster FROM chunks WHERE id='a'",
+        );
+      else if (table === "analysis_members")
+        db.exec(
+          "INSERT INTO analysis_members SELECT version,'new',topic_id,x,y FROM analysis_members WHERE chunk_id='a'",
+        );
+      else
+        db.exec(
+          "INSERT INTO analysis_conversations SELECT version,'new','new',vector,x,y FROM analysis_conversations WHERE session='a'",
+        );
+    }
+    const growing = publishDensityGroups(
+      db,
+      "v",
+      ["a", "b", "c", "manual", "new"],
+      { labels: [4, 4, -1, 4, 4] },
+    );
+    assert.equal(
+      db
+        .prepare("SELECT topic_id FROM analysis_members WHERE chunk_id='new'")
+        .get().topic_id,
+      topic("a").topic_id,
+    );
+    assert.equal(
+      db
+        .prepare("SELECT name FROM analysis_topics WHERE id=?")
+        .get(topic("a").topic_id).name,
+      "Document import pipeline",
+    );
+    assert.equal(growing.namingPending, false);
+    // Splitting a group retires its identity rather than giving one branch its board.
+    const split = publishDensityGroups(
+      db,
+      "v",
+      ["a", "b", "c", "manual", "new"],
+      { labels: [1, 2, -1, 1, 2] },
+    );
+    assert.ok(split.namingPending);
+    const oldId = topic("a").topic_id;
+    assert.equal(
+      db.prepare("SELECT 1 FROM analysis_topics WHERE id=?").get(oldId),
+      undefined,
+    );
+    assert.equal(
+      workstreamResolver(db, "v")(oldId).name,
+      "Document import pipeline",
+    );
+    assert.equal(
+      workstreamResolver(db, "v")(oldId).id,
+      oldId,
+      "a split retains its historical board",
+    );
+    const highest = nextWorkstreamId(db) - 1;
+    db.prepare(
+      "INSERT OR REPLACE INTO retired_workstreams VALUES(?,?,?,?,?)",
+    ).run(
+      highest + 50,
+      "Retired stream",
+      "Old substantive scope",
+      "blue",
+      JSON.stringify(["a", "b"]),
+    );
+    assert.ok(
+      nextWorkstreamId(db) > highest + 50,
+      "removed IDs must never be recycled",
+    );
+    assert.equal(
+      workstreamResolver(db, "v")(highest + 50).id,
+      highest + 50,
+      "ambiguous lineage stays retired",
+    );
   } finally {
     db.close();
   }

@@ -1,3 +1,4 @@
+import { nextWorkstreamId } from "./workstream-identity.js";
 import { createHash } from "node:crypto";
 import { activeAnalysis } from "./analysis-store.js";
 import { vectorArray, vectorBuffer } from "./db.js";
@@ -95,8 +96,7 @@ export function splitWorkStream(
             })),
           ),
         );
-      const id =
-        (db.prepare("SELECT max(id) n FROM analysis_topics").get().n ?? -1) + 1;
+      const id = nextWorkstreamId(db);
       const used = new Set(topics.map((t) => t.color));
       const color = nextTopicColor(used);
       db.prepare("INSERT INTO analysis_topics VALUES(?,?,?,?,?,?)").run(

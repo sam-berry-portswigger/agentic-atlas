@@ -9,6 +9,7 @@ import {
 
 export function initAnalysisSchema(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS analysis_runs(id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, model TEXT NOT NULL, generation_model TEXT NOT NULL, created_at TEXT NOT NULL, data TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS retired_workstreams(id INTEGER PRIMARY KEY,name TEXT NOT NULL,description TEXT NOT NULL,color TEXT NOT NULL,sessions TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS analysis_name_cache(key TEXT PRIMARY KEY,data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS analysis_session_labels(version TEXT NOT NULL,session TEXT NOT NULL,title TEXT NOT NULL,input_hash TEXT NOT NULL,PRIMARY KEY(version,session));
     CREATE TABLE IF NOT EXISTS analysis_conversations(version TEXT NOT NULL,session TEXT NOT NULL,representative_id TEXT NOT NULL,vector BLOB NOT NULL,x REAL,y REAL,PRIMARY KEY(version,session));
