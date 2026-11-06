@@ -1,3 +1,4 @@
+import { hasSavedWorkstreams } from "./numerical-streams.js";
 import { createHash, randomUUID } from "node:crypto";
 import { balancedObjectiveGroup } from "./balanced-groups.js";
 import { nextWorkstreamId } from "./workstream-identity.js";
@@ -332,12 +333,16 @@ export async function updateCatalogue(
       }));
       let topic =
         topics.find((t) => t.id === corrections[item.session]) ||
-        // Preserve an inferred assignment for an unchanged representation, not
-        // indefinitely after the conversation has acquired a different goal.
+        // Published membership is durable organisation. New dialogue updates
+        // the evidence, not the identity owning its tasks and archive choices.
         (prior &&
-        !prior.background &&
         old &&
-        cosine(item.conversation.vector, vectorArray(old.vector)) >= 0.9995
+        ((hasSavedWorkstreams(metadata) &&
+          !isFallback({ name: prior.name }) &&
+          !(metadata.residualTopicIds || []).includes(prior.id)) ||
+          (!prior.background &&
+            cosine(item.conversation.vector, vectorArray(old.vector)) >=
+              0.9995))
           ? prior
           : item.conversation.objectiveUnclear
             ? null

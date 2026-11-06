@@ -679,6 +679,7 @@ export default function App() {
                             .catch((e) => setError(e.message))
                             .finally(() => setSyncing(false));
                         }}
+                        title="Place new sessions while preserving existing positions, work streams and task links."
                       >
                         Refresh map
                       </Button>

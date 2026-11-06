@@ -8,6 +8,10 @@ import { isFallback, OTHER_DESCRIPTION } from "./semantic-policy.js";
 import { nextTopicColor } from "../shared/topic-colors.js";
 import { invalidateSessionStreams } from "./session-streams.js";
 
+// Map geometry must not replace already published workstream identities.
+export const hasSavedWorkstreams = (data) =>
+  !!(data.densityPolicy || data.localClusterPolicy || data.workstreamPolicy);
+
 export const LOCAL_CLUSTER_POLICY = "saved-map-density-leaves-v1";
 export const DENSITY_POLICY = "umap15-min008-ns30-hdbscan6-3-leaf-v1";
 export const DENSITY_PLACEHOLDER_DESCRIPTION =
@@ -287,7 +291,7 @@ export function publishDensityGroups(db, version, ids, result) {
 
 // One migration of saved coordinates. No new projection, embeddings or text.
 export async function refreshSavedDensityGroups(db, run, options = {}) {
-  if (JSON.parse(run.data).localClusterPolicy === LOCAL_CLUSTER_POLICY) return;
+  if (hasSavedWorkstreams(JSON.parse(run.data))) return;
   const rows = db
     .prepare(
       "SELECT representative_id AS id,x,y FROM analysis_conversations WHERE version=? AND x IS NOT NULL AND y IS NOT NULL ORDER BY session LIMIT 1800",

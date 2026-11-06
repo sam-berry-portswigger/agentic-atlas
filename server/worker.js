@@ -1,4 +1,7 @@
-import { refreshSavedDensityGroups } from "./numerical-streams.js";
+import {
+  refreshSavedDensityGroups,
+  hasSavedWorkstreams,
+} from "./numerical-streams.js";
 import { nameDensityGroups } from "./density-naming.js";
 import { parentPort, workerData } from "node:worker_threads";
 import { stat } from "node:fs/promises";
@@ -46,17 +49,21 @@ async function index() {
   }
   if (workerData.projectionOnly) {
     const run = activeAnalysis(db);
+    const established = hasSavedWorkstreams(JSON.parse(run?.data || "{}"));
     if (run)
       await upgradeProjection(db, run, {
         send: progress,
         signal: stopping.signal,
         isStopped: () => stopped,
       });
-    await nameDensityGroups(db, {
-      send: progress,
-      signal: stopping.signal,
-      isStopped: () => stopped,
-    });
+    // Initial grouping may need names; refreshing saved geometry never does.
+    if (!established) {
+      await nameDensityGroups(db, {
+        send: progress,
+        signal: stopping.signal,
+        isStopped: () => stopped,
+      });
+    }
     const metadata = JSON.parse(activeAnalysis(db)?.data || "{}");
     result = {
       contentReady: true,

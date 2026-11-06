@@ -12,7 +12,17 @@ import {
 } from "../server/incremental-analysis.js";
 import { vectorBuffer } from "../server/db.js";
 import { SEMANTIC_POLICY } from "../server/semantic-policy.js";
-import { upgradeProjection } from "../server/projection-store.js";
+import {
+  initTodaySchema,
+  createTodayService,
+  setTodayVisibility,
+  readTodayVisibility,
+} from "../server/today-store.js";
+import { refreshSavedDensityGroups } from "../server/numerical-streams.js";
+import {
+  publishProjection,
+  upgradeProjection,
+} from "../server/projection-store.js";
 import { PROJECTION_POLICY } from "../server/projection.js";
 import { conversationVectors } from "../server/conversation-vectors.js";
 import { vectorArray, cosine } from "../server/db.js";
@@ -526,6 +536,188 @@ test("pending naming stays incomplete on automatic sync and retries explicitly w
         .n,
       2,
     );
+  } finally {
+    db.close();
+  }
+});
+
+test("sync preserves published membership despite changed conversation intent", async () => {
+  for (const policy of [
+    "densityPolicy",
+    "localClusterPolicy",
+    "workstreamPolicy",
+  ]) {
+    const db = fixture();
+    try {
+      const metadata = JSON.parse(activeAnalysis(db).data);
+      metadata[policy] = "established";
+      metadata.backgroundIds = [10, 30]; // Incidental display classification cannot erase ownership.
+      db.prepare("UPDATE analysis_runs SET data=? WHERE id='old'").run(
+        JSON.stringify(metadata),
+      );
+      for (let i = 0; i < 8; i++)
+        add(
+          db,
+          `different-${i}`,
+          "ui",
+          [0, 1],
+          `Substantive new scheduling evidence for an independent deliverable ${i}.`,
+        );
+      const before = db
+        .prepare(
+          "SELECT id,name,color FROM analysis_topics WHERE version='old' ORDER BY id",
+        )
+        .all();
+      const result = await updateCatalogue(db, { changedSessions: ["ui"] });
+      assert.deepEqual(
+        db
+          .prepare(
+            "SELECT DISTINCT m.topic_id FROM analysis_members m JOIN chunks c ON c.id=m.chunk_id WHERE m.version=? AND c.session='ui'",
+          )
+          .all(result.version)
+          .map((r) => r.topic_id),
+        [10],
+      );
+      assert.deepEqual(
+        db
+          .prepare(
+            "SELECT id,name,color FROM analysis_topics WHERE version=? ORDER BY id",
+          )
+          .all(result.version),
+        before,
+      );
+      assert.equal(result.mapPending, true);
+    } finally {
+      db.close();
+    }
+  }
+});
+
+test("map refresh then sync preserves names, archives, boards and existing map positions", async () => {
+  const db = fixture();
+  try {
+    initTodaySchema(db);
+    const metadata = {
+      ...JSON.parse(activeAnalysis(db).data),
+      densityPolicy: "established-density",
+      localClusterPolicy: "older-policy",
+      mapPending: true,
+    };
+    db.prepare("UPDATE analysis_runs SET data=? WHERE id='old'").run(
+      JSON.stringify(metadata),
+    );
+    db.prepare("INSERT INTO workstream_title_overrides VALUES(?,?,?)").run(
+      10,
+      "Atlas UX",
+      "saved",
+    );
+    setTodayVisibility(db, {
+      kind: "stream",
+      id: "10",
+      label: "Atlas UX",
+      hidden: true,
+    });
+    const svc = createTodayService(db, { actor: "user" });
+    svc.createTask({
+      title: "Existing completed task",
+      streamId: 10,
+      status: "done",
+    });
+    const task = svc.createTask({ title: "Deferred task", streamId: 10 }).task;
+    svc.updateTask({ id: task.id, revision: task.revision, suspended: true });
+    const before = svc.listTasks();
+    const visibility = readTodayVisibility(db);
+    const topics = db
+      .prepare(
+        "SELECT id,name,color FROM analysis_topics WHERE version='old' ORDER BY id",
+      )
+      .all();
+    for (let i = 0; i < 4; i++) add(db, `fresh-${i}`, `fresh-${i}`, [1, 0]);
+    const synced = await updateCatalogue(db, {
+      changedSessions: ["fresh-0", "fresh-1", "fresh-2", "fresh-3"],
+    });
+    const version = synced.version;
+    const rows = () =>
+      db
+        .prepare(
+          "SELECT representative_id AS id,x,y FROM analysis_conversations WHERE version=? ORDER BY session",
+        )
+        .all(version);
+    const fixed = rows().filter((r) => r.x !== null);
+    // A refit proposing different coordinates and a geometric split must not
+    // replace the durable groups or move already placed sessions.
+    publishProjection(
+      db,
+      version,
+      rows().map((r) => r.id),
+      {
+        points: rows().map((_, i) => [i / 10, 0.9]),
+        labels: [0, 1, 0, 1, 0, 1],
+        selected: "synthetic-refit",
+        candidates: [],
+      },
+    );
+    for (const old of fixed)
+      assert.deepEqual(
+        rows().find((r) => r.id === old.id),
+        old,
+      );
+    assert.deepEqual(svc.listTasks(), before);
+    assert.deepEqual(readTodayVisibility(db), visibility);
+    assert.deepEqual(
+      db
+        .prepare(
+          "SELECT id,name,color FROM analysis_topics WHERE version=? ORDER BY id",
+        )
+        .all(version),
+      topics,
+    );
+    assert.equal(
+      db.prepare("SELECT count(*) n FROM retired_workstreams").get().n,
+      0,
+    );
+    // More dialogue changes the embedding direction; subsequent sync still
+    // keeps the same session in its archived, manually named workstream.
+    for (let i = 0; i < 8; i++)
+      add(
+        db,
+        `changed-${i}`,
+        "ui",
+        [0, 1],
+        `New scheduling discussion ${i} with substantive independent work.`,
+      );
+    await updateCatalogue(db, { changedSessions: ["ui"] });
+    assert.deepEqual(svc.listTasks(), before);
+    assert.deepEqual(readTodayVisibility(db), visibility);
+    const current = activeAnalysis(db);
+    assert.equal(
+      db
+        .prepare(
+          "SELECT topic_id FROM analysis_members WHERE version=? AND chunk_id=(SELECT representative_id FROM analysis_conversations WHERE version=? AND session='ui')",
+        )
+        .get(current.id, current.id).topic_id,
+      10,
+    );
+    const coordinates = db
+      .prepare(
+        "SELECT session,x,y FROM analysis_conversations WHERE version=? ORDER BY session",
+      )
+      .all(current.id);
+    await upgradeProjection(db, current, {
+      python: "/must-not-refit-saved-points",
+    });
+    assert.deepEqual(
+      db
+        .prepare(
+          "SELECT session,x,y FROM analysis_conversations WHERE version=? ORDER BY session",
+        )
+        .all(current.id),
+      coordinates,
+    );
+    await refreshSavedDensityGroups(db, activeAnalysis(db), {
+      python: "/must-not-recluster",
+    });
+    assert.deepEqual(svc.listTasks(), before);
   } finally {
     db.close();
   }
