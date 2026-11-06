@@ -1,8 +1,9 @@
-import { Drawer } from "@mantine/core";
+import SessionRename from "./SessionRename";
+import { Drawer, ActionIcon, Group, Tooltip } from "@mantine/core";
 import Markdown from "./Markdown.js";
 import { readNDJSON } from "../shared/stream.js";
 import { useEffect, useRef, useState } from "react";
-import { Check, Loader2, Network, Square } from "lucide-react";
+import { Check, Loader2, Network, Square, Pencil } from "lucide-react";
 import { formatDate, type Excerpt } from "./api";
 export type WorkItemSelection = {
   kind: "work";
@@ -32,6 +33,8 @@ type Conversation = {
   preview: string;
 };
 type Topic = {
+  topicId?: number;
+  analysisVersion: string;
   cluster: number | null;
   color: string;
   topicIds?: number[];
@@ -50,11 +53,15 @@ export default function TopicOverview({
   selection,
   scope,
   onClose,
+  onRenamed,
 }: {
   selection: TopicSelection;
   scope: { project: string; start: string; end: string };
   onClose: () => void;
+  onRenamed?: () => void;
 }) {
+  const [renaming, setRenaming] = useState(false);
+  const [reload, setReload] = useState(0);
   const [topic, setTopic] = useState<Topic | null>(null);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -67,6 +74,7 @@ export default function TopicOverview({
   const isWork = selection.kind === "work";
   useEffect(() => {
     const abort = new AbortController();
+    setRenaming(false);
     setTopic(null);
     setSummary(null);
     setComplete(false);
@@ -97,7 +105,7 @@ export default function TopicOverview({
       abort.abort();
       summaryAbort.current?.abort();
     };
-  }, [payload]);
+  }, [payload, reload]);
   async function summarize(abort = new AbortController()) {
     summaryAbort.current?.abort();
     summaryAbort.current = abort;
@@ -159,18 +167,36 @@ export default function TopicOverview({
   return (
     <Drawer
       opened
+      trapFocus={!renaming}
+      closeOnClickOutside={!renaming}
+      closeOnEscape={!renaming}
       onClose={onClose}
       size={650}
       title={
-        <span className="atlas-drawer-label">
-          <Network size={15} />
-          {isWork ? "Work overview" : "Work stream"}
-        </span>
+        <Group justify="space-between" wrap="nowrap" w="100%">
+          <span className="atlas-drawer-label">
+            <Network size={15} />
+            {isWork ? "Work overview" : "Work stream"}
+          </span>
+          {!isWork && topic && (
+            <Tooltip label="Rename work stream">
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                aria-label="Rename work stream"
+                onClick={() => setRenaming(true)}
+              >
+                <Pencil size={16} />
+              </ActionIcon>
+            </Tooltip>
+          )}
+        </Group>
       }
       closeButtonProps={{
         "aria-label": isWork ? "Close work overview" : "Close topic",
       }}
       classNames={{ body: "topic-panel" }}
+      styles={{ title: { flex: 1, marginRight: "var(--mantine-spacing-xs)" } }}
     >
       {!topic && !error && (
         <p role="status">
@@ -183,6 +209,23 @@ export default function TopicOverview({
       </h2>
       {topic && (
         <>
+          {!isWork && renaming && (
+            <SessionRename
+              kind="workstream"
+              analysisVersion={topic.analysisVersion}
+              scope={scope}
+              session={{
+                id: String(topic.topicId ?? topic.cluster),
+                title: topic.title,
+              }}
+              onClose={() => setRenaming(false)}
+              onSaved={() => {
+                setRenaming(false);
+                setReload((v) => v + 1);
+                onRenamed?.();
+              }}
+            />
+          )}
           <div className="topic-meta">
             <span
               className="topic-colour"

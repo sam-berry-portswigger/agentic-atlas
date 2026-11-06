@@ -14,13 +14,19 @@ export function nextWorkstreamId(db) {
 }
 
 export function workstreamResolver(db, version) {
+  const overrides = new Map(
+    db
+      .prepare("SELECT stream_id,title FROM workstream_title_overrides")
+      .all()
+      .map((o) => [o.stream_id, o.title]),
+  );
   const topics = new Map(
     db
       .prepare(
         "SELECT id,name,description,color FROM analysis_topics WHERE version=?",
       )
       .all(version)
-      .map((t) => [t.id, t]),
+      .map((t) => [t.id, { ...t, name: overrides.get(t.id) ?? t.name }]),
   );
   const current = new Map(
     db
@@ -73,7 +79,7 @@ export function workstreamResolver(db, version) {
         ? target
         : {
             id,
-            name: historical.name,
+            name: overrides.get(id) ?? historical.name,
             description: historical.description,
             color: historical.color,
           };

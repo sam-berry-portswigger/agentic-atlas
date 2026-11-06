@@ -785,6 +785,7 @@ export default function App() {
               detail.kind === "stream" && detail.scope ? detail.scope : scope
             }
             onClose={() => setDetail(null)}
+            onRenamed={() => void refresh()}
           />
         )
       )}

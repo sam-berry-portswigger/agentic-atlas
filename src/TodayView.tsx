@@ -1131,9 +1131,11 @@ export default function TodayView({
         <Drawer
           opened
           onClose={() => setSelected(null)}
-          trapFocus={!taskOpened}
-          closeOnClickOutside={!taskOpened}
-          closeOnEscape={!taskOpened}
+          trapFocus={!taskOpened && renameSession !== selectedSession.id}
+          closeOnClickOutside={
+            !taskOpened && renameSession !== selectedSession.id
+          }
+          closeOnEscape={!taskOpened && renameSession !== selectedSession.id}
           title={
             <span className="atlas-drawer-label">
               <span

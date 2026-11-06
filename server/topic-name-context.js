@@ -166,13 +166,13 @@ function validate(value) {
 export async function resolveTopicNames(
   db,
   requests,
-  { nameGenerator = jsonGenerate, signal } = {},
+  { nameGenerator = jsonGenerate, signal, refresh = false } = {},
 ) {
   const pending = [
     ...new Map(
       requests
         .filter(Boolean)
-        .filter((r) => !cachedTopicName(db, r))
+        .filter((r) => refresh || !cachedTopicName(db, r))
         .map((r) => [r.key, r]),
     ).values(),
   ];

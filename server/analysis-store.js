@@ -9,6 +9,7 @@ import {
 
 export function initAnalysisSchema(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS analysis_runs(id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, model TEXT NOT NULL, generation_model TEXT NOT NULL, created_at TEXT NOT NULL, data TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS workstream_title_overrides(stream_id INTEGER PRIMARY KEY,title TEXT NOT NULL,updated TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS retired_workstreams(id INTEGER PRIMARY KEY,name TEXT NOT NULL,description TEXT NOT NULL,color TEXT NOT NULL,sessions TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS analysis_name_cache(key TEXT PRIMARY KEY,data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS analysis_session_labels(version TEXT NOT NULL,session TEXT NOT NULL,title TEXT NOT NULL,input_hash TEXT NOT NULL,PRIMARY KEY(version,session));
@@ -71,7 +72,7 @@ export function catalogue(db, version) {
   if (!run) return [];
   return db
     .prepare(
-      "SELECT id AS cluster,id,name AS title,description,color,version AS analysisVersion FROM analysis_topics WHERE version=? ORDER BY id",
+      "SELECT t.id AS cluster,t.id,coalesce(o.title,t.name) AS title,t.description,t.color,t.version AS analysisVersion FROM analysis_topics t LEFT JOIN workstream_title_overrides o ON o.stream_id=t.id WHERE t.version=? ORDER BY t.id",
     )
     .all(run.id);
 }
@@ -147,12 +148,11 @@ export function readMap(db, scope, model) {
       title: displayName(session, p.title, p.project),
       analysisVersion: run.id,
     }));
-  return {
-    points,
-    topics: catalogue(db, run.id),
-    analysisVersion: run.id,
-    pending: false,
-  };
+  const topics = catalogue(db, run.id);
+  const names = new Map(topics.map((t) => [t.id, t.title]));
+  for (const point of points)
+    point.topicName = names.get(point.cluster) ?? point.topicName;
+  return { points, topics, analysisVersion: run.id, pending: false };
 }
 export function pendingAnalysis(
   message = "Sync sessions to analyse these conversations before opening their topics.",

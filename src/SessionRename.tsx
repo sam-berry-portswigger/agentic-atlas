@@ -1,17 +1,42 @@
-import { Alert, Button, Group, Stack, Text, TextInput } from "@mantine/core";
+import {
+  Alert,
+  Button,
+  Group,
+  Modal,
+  Stack,
+  Text,
+  TextInput,
+} from "@mantine/core";
 import { Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 
 export default function SessionRename({
   session,
+  kind = "session",
+  analysisVersion,
+  scope,
   onClose,
   onSaved,
 }: {
   session: { id: string; title: string };
+  kind?: "session" | "workstream";
+  analysisVersion?: string;
+  scope?: { project: string; start: string; end: string };
   onClose: () => void;
   onSaved: (title: string) => void;
 }) {
+  const label = kind === "session" ? "session" : "work stream";
+  const base = kind === "session" ? "today/sessions" : "workstreams";
+  const identity =
+    kind === "session"
+      ? { session: session.id }
+      : {
+          streamId: Number(session.id),
+          analysisVersion,
+          scope,
+          previousTitle: session.title,
+        };
   const [title, setTitle] = useState(session.title);
   const [suggestion, setSuggestion] = useState("");
   const [loading, setLoading] = useState(false);
@@ -27,10 +52,10 @@ export default function SessionRename({
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/today/sessions/suggest-title", {
+      const response = await fetch(`/api/${base}/suggest-title`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session: session.id, force }),
+        body: JSON.stringify({ ...identity, force }),
         signal: controller.signal,
       });
       const result = await response.json();
@@ -45,85 +70,109 @@ export default function SessionRename({
     }
   }
   useEffect(() => {
-    void suggest();
+    request.current?.abort();
+    setTitle(session.title);
+    setSuggestion("");
+    setLoading(false);
+    setError("");
+    edits.current = 0;
     return () => request.current?.abort();
-  }, [session.id]);
+  }, [session.id, kind, analysisVersion]);
   return (
-    <Stack
-      component="form"
-      aria-label="Rename session"
-      gap="sm"
-      mt="md"
-      mb="lg"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        if (!title.trim() || title.trim() === session.title || saving) return;
-        setSaving(true);
-        setError("");
-        try {
-          const result = await api<{ title: string }>("today/sessions/rename", {
-            session: session.id,
-            title,
-          });
-          onSaved(result.title);
-        } catch (e) {
-          setError((e as Error).message);
-          setSaving(false);
-        }
+    <Modal
+      opened
+      onClose={() => {
+        if (!saving) onClose();
+      }}
+      title={kind === "session" ? "Rename session" : "Rename work stream"}
+      centered
+      size="md"
+      closeOnEscape={!saving}
+      closeOnClickOutside={!saving}
+      closeButtonProps={{
+        "aria-label": "Close rename dialog",
+        disabled: saving,
       }}
     >
-      <TextInput
-        autoFocus
-        label="Session name"
-        value={title}
-        maxLength={80}
-        disabled={saving}
-        onChange={(e) => {
-          edits.current++;
-          setTitle(e.currentTarget.value);
+      <Stack
+        component="form"
+        aria-label={`Rename ${label}`}
+        gap="sm"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!title.trim() || title.trim() === session.title || saving) return;
+          setSaving(true);
+          setError("");
+          try {
+            const result = await api<{ title: string }>(`${base}/rename`, {
+              ...identity,
+              title,
+            });
+            onSaved(result.title);
+          } catch (e) {
+            setError((e as Error).message);
+            setSaving(false);
+          }
         }}
-      />
-      <Text size="xs" c="dimmed" role="status">
-        {loading
-          ? "Suggesting a name with local AI…"
-          : "Review or edit the name, then save it in Atlas."}
-      </Text>
-      {suggestion && suggestion !== title && (
-        <Button
-          variant="subtle"
-          h="auto"
-          styles={{ label: { whiteSpace: "normal", textAlign: "left" } }}
+      >
+        <TextInput
+          autoFocus
+          data-autofocus
+          label={kind === "session" ? "Session name" : "Work stream name"}
+          value={title}
+          maxLength={80}
           disabled={saving}
-          onClick={() => {
+          onChange={(e) => {
             edits.current++;
-            setTitle(suggestion);
+            setTitle(e.currentTarget.value);
           }}
-        >
-          Use suggestion: {suggestion}
-        </Button>
-      )}
-      {error && <Alert color="red">{error}</Alert>}
-      <Group gap="xs">
-        <Button
-          type="submit"
-          loading={saving}
-          disabled={!title.trim() || title.trim() === session.title}
-        >
-          Save name
-        </Button>
-        <Button
-          variant="default"
-          loading={loading}
-          disabled={saving}
-          leftSection={<Sparkles size={14} />}
-          onClick={() => void suggest(true)}
-        >
-          Suggest again
-        </Button>
-        <Button variant="default" disabled={saving} onClick={onClose}>
-          Cancel
-        </Button>
-      </Group>
-    </Stack>
+        />
+        <Text size="xs" c="dimmed" role="status">
+          {loading
+            ? "Suggesting a name with local AI…"
+            : kind === "workstream" && suggestion === session.title
+              ? "The current name still fits this work stream. You can edit it or suggest again."
+              : suggestion
+                ? "Review or edit the name, then save it in Atlas."
+                : "Enter a name, or ask local AI for a suggestion."}
+        </Text>
+        {suggestion && suggestion !== title && (
+          <Button
+            variant="subtle"
+            h="auto"
+            styles={{ label: { whiteSpace: "normal", textAlign: "left" } }}
+            disabled={saving}
+            onClick={() => {
+              edits.current++;
+              setTitle(suggestion);
+            }}
+          >
+            Use suggestion: {suggestion}
+          </Button>
+        )}
+        {error && <Alert color="red">{error}</Alert>}
+        <Group gap="xs">
+          <Button
+            type="submit"
+            loading={saving}
+            disabled={!title.trim() || title.trim() === session.title}
+          >
+            Save name
+          </Button>
+          <Button
+            variant="default"
+            loading={loading}
+            disabled={saving}
+            leftSection={<Sparkles size={14} />}
+            onClick={() => void suggest(!!suggestion)}
+          >
+            {suggestion ? "Suggest again" : "Suggest name"}
+          </Button>
+          <Button variant="default" disabled={saving} onClick={onClose}>
+            Cancel
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
   );
 }

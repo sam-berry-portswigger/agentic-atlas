@@ -37,7 +37,13 @@ export async function nameDensityGroups(
       )
       .get()?.value || "{}",
   );
-  const protectedIds = new Set(Object.values(manual)),
+  const protectedIds = new Set([
+      ...Object.values(manual),
+      ...db
+        .prepare("SELECT stream_id FROM workstream_title_overrides")
+        .all()
+        .map((o) => o.stream_id),
+    ]),
     residual = new Set(data.residualTopicIds || []);
   const topics = db
     .prepare("SELECT * FROM analysis_topics WHERE version=? ORDER BY id")

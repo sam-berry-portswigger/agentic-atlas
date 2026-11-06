@@ -1,3 +1,7 @@
+import {
+  saveWorkstreamTitle,
+  suggestWorkstreamTitle,
+} from "./workstream-rename.js";
 import { withTopicNames } from "./topic-name-context.js";
 import { projectionNeedsRefresh } from "./projection-store.js";
 import { readStreams, assignSessionStream } from "./streams.js";
@@ -810,6 +814,18 @@ app.post(
       elapsed: Date.now() - start,
       mode,
     });
+  }),
+);
+app.post(
+  "/api/workstreams/suggest-title",
+  asyncRoute(async (req, res) => {
+    res.json(await suggestWorkstreamTitle(db, req.body));
+  }),
+);
+app.post(
+  "/api/workstreams/rename",
+  asyncRoute(async (req, res) => {
+    res.json(saveWorkstreamTitle(db, req.body));
   }),
 );
 app.post(
