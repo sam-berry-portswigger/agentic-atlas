@@ -454,3 +454,79 @@ test("selecting the explicit :latest alias preserves stream identities and cache
     db.close();
   }
 });
+
+test("changed conversation intent can leave its inferred stream while explicit corrections still win", async () => {
+  for (const manual of [false, true]) {
+    const db = fixture();
+    try {
+      if (manual)
+        db.prepare(
+          "INSERT INTO analysis_state VALUES('stream_session_assignments',?)",
+        ).run(JSON.stringify({ ui: 10 }));
+      for (let i = 0; i < 8; i++)
+        add(
+          db,
+          `different-${i}`,
+          "ui",
+          [0, 1],
+          `The user has changed the objective to an independent scheduling deliverable, with substantive new evidence ${i}.`,
+        );
+      const result = await updateCatalogue(db, { changedSessions: ["ui"] });
+      const topics = db
+        .prepare(
+          "SELECT DISTINCT m.topic_id FROM analysis_members m JOIN chunks c ON c.id=m.chunk_id WHERE m.version=? AND c.session='ui'",
+        )
+        .all(result.version);
+      assert.deepEqual(
+        topics.map((t) => t.topic_id),
+        [manual ? 10 : 20],
+      );
+    } finally {
+      db.close();
+    }
+  }
+});
+
+test("pending naming stays incomplete on automatic sync and retries explicitly without forcing a rebuild", async () => {
+  const db = fixture();
+  const metadata = JSON.parse(activeAnalysis(db).data);
+  metadata.namingPending = true;
+  metadata.warnings = [{ code: "naming-pending", message: "Retry naming" }];
+  db.prepare("UPDATE analysis_runs SET data=? WHERE id='old'").run(
+    JSON.stringify(metadata),
+  );
+  try {
+    const idle = await updateCatalogue(db, {
+      bootstrap: () =>
+        assert.fail("automatic checks must not regenerate names"),
+    });
+    assert.equal(idle.assignmentsReady, false);
+    let calls = 0;
+    const retried = await updateCatalogue(db, {
+      retryNaming: true,
+      bootstrap: async (_db, options) => {
+        calls++;
+        assert.equal(options.retryNaming, true);
+        assert.equal(options.force, undefined);
+        assert.equal(options.projectMap, false);
+        assert.equal(options.namingOptional, true);
+        metadata.namingPending = false;
+        metadata.warnings = [];
+        db.prepare("UPDATE analysis_runs SET data=? WHERE id='old'").run(
+          JSON.stringify(metadata),
+        );
+        return "old";
+      },
+    });
+    assert.equal(calls, 1);
+    assert.equal(retried.assignmentsReady, true);
+    assert.deepEqual(retried.warnings, []);
+    assert.equal(
+      db.prepare("SELECT count(*) n FROM chunks WHERE vector IS NOT NULL").get()
+        .n,
+      2,
+    );
+  } finally {
+    db.close();
+  }
+});

@@ -134,6 +134,8 @@ export type Snapshot = {
   warnings: string[];
   sources: { claude: string; codex: string };
   refreshed: string;
+  start: string;
+  end: string;
   catalogueReady?: boolean;
   streamsUpdatedAt?: string | null;
   unclassifiedSessions?: number;
@@ -150,6 +152,12 @@ export type Snapshot = {
     activity?: { periods: number; requests: number; latest: number };
     color: string;
     background: boolean;
+  }[];
+  higherStreams?: {
+    id: number;
+    name: string;
+    color: string;
+    topicIds: number[];
   }[];
   analysisVersion: string | null;
 };
@@ -215,11 +223,16 @@ export default function TodayView({
   onOpenStream,
   onAgentSetup,
   analysisJob,
+  namingPending = false,
   autoSync,
 }: {
-  onOpenStream?: (id: number) => void;
+  onOpenStream?: (
+    id: number,
+    scope?: { project: string; start: string; end: string },
+  ) => void;
   onAgentSetup: () => void;
   analysisJob?: SyncJob;
+  namingPending?: boolean;
   autoSync?: { paused: boolean; lastSuccessfulAt: string | null };
 }) {
   const [data, setData] = useState<Snapshot | null>(null),
@@ -791,7 +804,13 @@ export default function TodayView({
           ),
         }))}
       />
-      <SyncWarnings job={analysisJob} />
+      <SyncWarnings
+        job={analysisJob}
+        namingPending={namingPending}
+        onRetry={() =>
+          void api("analysis/name", {}).catch((e) => setError(e.message))
+        }
+      />
       {analysisJob?.phase === "error" && (
         <div className="td-alert" role="alert">
           {analysisJob.contentReady
@@ -902,7 +921,13 @@ export default function TodayView({
                 data.workstreams?.find((s) => s.id === id)?.name || String(id),
               )
             }
-            onOpenStream={onOpenStream}
+            onOpenStream={(id) =>
+              onOpenStream?.(id, {
+                project: "",
+                start: data.start,
+                end: data.end,
+              })
+            }
           />
         )}
         {loading && !data && (
@@ -1836,10 +1861,9 @@ export default function TodayView({
           <section>
             <h3>Work streams</h3>
             <p>
-              A work stream brings together conversations about the same piece
-              of work. Atlas groups chats by what you discuss, so a stream can
-              contain chats from different projects and days. Today shows the
-              streams with activity today; Explore includes earlier work.
+              Each work stream shows one name, scope and set of conversations.
+              Today shows streams with activity today. Explore uses the same
+              saved clusters, names and colours.
             </p>
           </section>
           <section>

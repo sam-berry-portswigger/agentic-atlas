@@ -4,7 +4,7 @@ import { ollama, documentInput } from "./ollama.js";
 import { isFallback } from "./semantic-policy.js";
 
 // Stream scope is a semantic check on legacy examples, not a keyword rule.
-export async function embedStreamScopes(db, topics) {
+export async function embedStreamScopes(db, topics, { signal } = {}) {
   const model = getConfig(db).embeddingModel;
   const vectors = new Map(),
     pending = [];
@@ -21,13 +21,18 @@ export async function embedStreamScopes(db, topics) {
     else pending.push({ topic, key });
   }
   if (pending.length) {
-    const response = await ollama("embed", {
-      model,
-      input: pending.map(({ topic }) =>
-        documentInput(model, topic.description, topic.name),
-      ),
-      keep_alive: "10m",
-    });
+    const response = await ollama(
+      "embed",
+      {
+        model,
+        input: pending.map(({ topic }) =>
+          documentInput(model, topic.description, topic.name),
+        ),
+        keep_alive: "10m",
+      },
+      180000,
+      signal,
+    );
     if (
       response.embeddings?.length !== pending.length ||
       response.embeddings.some(

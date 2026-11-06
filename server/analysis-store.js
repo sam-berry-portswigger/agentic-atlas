@@ -1,3 +1,4 @@
+import { visibleTopicLabel } from "./local-topic-labels.js";
 import { createHash } from "node:crypto";
 import { scopeWhere } from "./scope.js";
 import { SEMANTIC_POLICY } from "./semantic-policy.js";
@@ -115,9 +116,21 @@ export function readMap(db, scope, model) {
         title: displayName(p.session, p.title, p.project),
         analysisVersion: run.id,
       }));
+    const topics = catalogue(db, run.id).map((t) => {
+      const visible = points.filter((p) => p.cluster === t.id);
+      const label = visibleTopicLabel(
+        db,
+        run.id,
+        { id: t.id, name: t.title, description: t.description },
+        visible,
+        scope,
+      );
+      for (const p of visible) p.topicName = label.name;
+      return { ...t, title: label.name, description: label.description };
+    });
     return {
       points,
-      topics: catalogue(db, run.id),
+      topics,
       analysisVersion: run.id,
       pending: false,
       unit: "conversation",

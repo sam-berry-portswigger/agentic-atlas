@@ -94,3 +94,27 @@ test("pause and failure finish the current stage without discarding a successful
     assert.equal(final.indeterminate, false);
   }
 });
+
+test("successful local naming recovery replaces transient warnings with canonical catalogue warnings", () => {
+  const report = createSyncProgress(() => {});
+  report.progress("naming");
+  report.progress("warning", 0, 0, "Global proposal was incomplete");
+  const complete = report.progress("complete", 0, 0, "Ready", {
+    contentReady: true,
+    assignmentsReady: true,
+    warnings: [],
+  });
+  assert.deepEqual(complete.warnings, []);
+});
+
+test("unfinished naming keeps its warning after map completion", () => {
+  const report = createSyncProgress(() => {});
+  report.progress("projecting");
+  const complete = report.progress("complete", 0, 0, "Map ready", {
+    contentReady: true,
+    assignmentsReady: false,
+    warnings: [{ code: "naming-pending", message: "Retry naming" }],
+  });
+  assert.equal(complete.assignmentsReady, false);
+  assert.deepEqual(complete.warnings, ["Retry naming"]);
+});

@@ -544,7 +544,7 @@ export default function TodayBoards({
           {group.id !== null && (
             <button
               className="td-archive-stream"
-              aria-label={"Archive stream: " + group.name}
+              aria-label={"Archive work stream: " + group.name}
               title="Archive this work stream"
               onClick={() => onHideStream(group.id!)}
             >

@@ -7,6 +7,7 @@ export function catalogueRevision(analysis) {
     analysis.contentUpdatedAt || null,
     analysis.assignmentsUpdatedAt || null,
     analysis.mapUpdatedAt || null,
+    analysis.hierarchyUpdatedAt || null,
     !!analysis.mapPending,
   ]);
 }

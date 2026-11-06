@@ -428,9 +428,10 @@ export default function App() {
                 navigate("mcp");
               }}
               analysisJob={status?.job}
+              namingPending={!!status?.analysis.namingPending}
               autoSync={status?.autoSync}
-              onOpenStream={(streamId) =>
-                setDetail({ kind: "stream", streamId })
+              onOpenStream={(streamId, streamScope) =>
+                setDetail({ kind: "stream", streamId, scope: streamScope })
               }
             />
           ) : (
@@ -523,7 +524,15 @@ export default function App() {
                     <button onClick={() => void sync()}>Retry</button>
                   </div>
                 )}
-              <SyncWarnings job={status?.job} />
+              <SyncWarnings
+                job={status?.job}
+                namingPending={!!status?.analysis.namingPending}
+                onRetry={() =>
+                  void api("analysis/name", {})
+                    .then(() => refreshJob())
+                    .catch((e) => setError(e.message))
+                }
+              />
               <div className="date-toolbar">
                 <div>
                   <CalendarDays size={14} />
@@ -679,7 +688,10 @@ export default function App() {
                         className="active-topic-filter"
                         onClick={() => setActiveCluster(null)}
                       >
-                        {topicLabels[activeCluster] || "Selected workstream"}
+                        {mapTopics.find((t) => t.cluster === activeCluster)
+                          ?.title ||
+                          topicLabels[activeCluster] ||
+                          "Selected workstream"}
                         <X size={12} />
                       </button>
                     )}
@@ -723,7 +735,10 @@ export default function App() {
                   onSelect={(id) => void openPoint(id)}
                 />
                 {mapTopics.length > 0 && (
-                  <div className="map-topic-legend" aria-label="Topic colours">
+                  <div
+                    className="map-topic-legend"
+                    aria-label="Work stream colours"
+                  >
                     {mapTopics
                       .filter((topic) =>
                         points.some((point) => point.cluster === topic.cluster),
@@ -766,7 +781,9 @@ export default function App() {
         detail && (
           <TopicOverview
             selection={detail}
-            scope={scope}
+            scope={
+              detail.kind === "stream" && detail.scope ? detail.scope : scope
+            }
             onClose={() => setDetail(null)}
           />
         )

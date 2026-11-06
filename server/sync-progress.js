@@ -53,6 +53,12 @@ export function createSyncProgress(publish, { clock = Date.now } = {}) {
         return current ? emit() : null;
       }
       const now = clock();
+      if (
+        phase === "complete" &&
+        extra.assignmentsReady === true &&
+        Array.isArray(extra.warnings)
+      )
+        warnings.length = 0;
       for (const item of extra.warnings || []) {
         const warning = typeof item === "string" ? item : item?.message;
         if (warning && !warnings.includes(warning)) warnings.push(warning);

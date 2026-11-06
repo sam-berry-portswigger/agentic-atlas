@@ -255,3 +255,23 @@ test("a persisted pause survives a new coordinator until explicit manual resume"
   assert.equal(checks, 1);
   assert.equal(f.coordinator.snapshot().paused, false);
 });
+
+test("manual naming retry is distinguishable from foreground checks", async () => {
+  const checks = [],
+    runs = [];
+  const f = fixture({
+    check: async ({ manual }) => {
+      checks.push(manual);
+      return manual;
+    },
+    run: async ({ automatic }) => runs.push(automatic),
+  });
+  f.coordinator.foreground();
+  await f.advance(10);
+  assert.deepEqual(checks, [false]);
+  assert.deepEqual(runs, []);
+  await f.coordinator.request();
+  assert.deepEqual(checks, [false, true]);
+  assert.deepEqual(runs, [false]);
+  f.coordinator.close();
+});

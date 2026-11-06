@@ -119,6 +119,22 @@ export default function FirstTimeSetup({
             </p>
           </div>
         </li>
+        <li>
+          <div>
+            <h3>Prepare the map</h3>
+            <p>
+              With Python 3.11–3.14 installed, run this once from the Atlas
+              project folder to prepare the local map worker:
+            </p>
+            <Command value="npm run setup:projection" />
+            <p>
+              In Explore, choose <b>Refresh map</b> to lay out your
+              conversations. Today and search work without this step. Refreshing
+              the map updates positions while keeping work streams and manual
+              corrections.
+            </p>
+          </div>
+        </li>
       </ol>
       <div className="atlas-setup-optional">
         <Text size="sm" fw={600}>

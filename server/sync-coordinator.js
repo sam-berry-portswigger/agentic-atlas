@@ -74,7 +74,7 @@ export function createSyncCoordinator({
       let retryDelay = null;
       try {
         lastCheckedAt = new Date(now()).toISOString();
-        const pending = await check();
+        const pending = await check({ manual });
         if (paused || stopped) return false;
         if (!pending) {
           failures = 0;

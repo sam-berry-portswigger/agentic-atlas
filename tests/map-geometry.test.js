@@ -128,6 +128,7 @@ test("publishing a layout preserves topic identities and rolls back invalid coor
       [0.1, 0.2],
       [0.3, 0.4],
     ],
+    labels: [0, 1], // Layout density labels must never replace saved work streams.
     selected: "semantic-30",
     candidates: [],
   };
@@ -177,7 +178,7 @@ test("projection positions are independent of topic assignments", async () => {
   const first = await projectTopics(vectors, [0, 0, 1, 1, 2, 2]);
   const recolored = await projectTopics(vectors, [2, 1, 0, 2, 1, 0]);
   assert.deepEqual(first.points, recolored.points);
-  assert.equal(first.selected, "semantic-exact-100");
+  assert.equal(first.selected, "cosine-umap15-density6-leaf");
   assert.equal(first.candidates[0].metrics.samples, vectors.length);
   assert.ok(first.points.flat().every(Number.isFinite));
 });

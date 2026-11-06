@@ -2,10 +2,11 @@ import {
   rememberRelationships,
   reconcileSessionStreams,
 } from "./session-streams.js";
+import { visibleTopicLabel } from "./local-topic-labels.js";
 import { activeAnalysis, catalogue } from "./analysis-store.js";
 import { STREAM_METHOD } from "./stream-analysis.js";
 import { familyRoots } from "../shared/today-layout.js";
-export function attachTodayStreams(db, sessions, edges = []) {
+export function attachTodayStreams(db, sessions, edges = [], scope = {}) {
   const run = activeAnalysis(db);
   if (!run)
     return {
@@ -76,22 +77,45 @@ export function attachTodayStreams(db, sessions, edges = []) {
       if (!s.topic && topic) s.topic = topic;
     }
   }
+  const labels = new Map(
+    topics.map((t) => {
+      const visible = forest.roots.filter((s) => s.boardStreamId === t.id);
+      return [
+        t.id,
+        visibleTopicLabel(
+          db,
+          run.id,
+          { id: t.id, name: t.title, description: t.description },
+          visible,
+          scope,
+        ),
+      ];
+    }),
+  );
+  for (const s of sessions)
+    if (s.topic)
+      s.topic = {
+        ...s.topic,
+        name: labels.get(Number(s.topic.id))?.name || s.topic.name,
+      };
   return {
     semantic: [],
     topics: topics.map((t) => ({
       id: String(t.id),
-      name: t.title,
+      name: labels.get(t.id).name,
       color: t.color,
     })),
     workstreams: topics.map((t) => ({
       id: t.id,
-      name: t.title,
-      description: t.description,
+      name: labels.get(t.id).name,
+      description: labels.get(t.id).description,
       color: t.color,
-      background: (metadata.backgroundIds || []).includes(t.id),
+      background:
+        labels.get(t.id).background ??
+        (metadata.backgroundIds || []).includes(t.id),
     })),
     analysisVersion: run.id,
-    streamsUpdatedAt: run.created_at,
+    streamsUpdatedAt: metadata.assignmentsUpdatedAt || run.created_at,
     unclassifiedSessions: forest.roots.filter((s) => !s.topic).length,
     catalogueReady: metadata.method === STREAM_METHOD,
   };

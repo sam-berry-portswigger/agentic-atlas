@@ -1,3 +1,5 @@
+import { withTopicNames } from "./topic-name-context.js";
+import { projectionNeedsRefresh } from "./projection-store.js";
 import { readStreams, assignSessionStream } from "./streams.js";
 import express from "express";
 import { mountToday } from "./today.js";
@@ -58,7 +60,7 @@ const syncCoordinator = createSyncCoordinator({
   isBusy: busyIndex,
   initialSuccessfulAt: job.phase === "complete" ? job.updatedAt || null : null,
   initialPaused: automaticPaused,
-  check: async () => {
+  check: async ({ manual = false } = {}) => {
     const fresh = await archiveFreshness(db, { force: true });
     if (fresh.pending) return true;
     const { embeddingModel } = getConfig(db);
@@ -80,6 +82,7 @@ const syncCoordinator = createSyncCoordinator({
     )
       return true;
     const run = activeAnalysis(db);
+    if (manual && JSON.parse(run?.data || "{}").namingPending) return true;
     if (!run || run.model !== embeddingModel)
       return !!db
         .prepare(
@@ -107,10 +110,12 @@ const syncCoordinator = createSyncCoordinator({
       phase: "complete",
       done: 0,
       total: 0,
-      detail: "Sessions are up to date",
+      detail: metadata.namingPending
+        ? "Sessions are indexed; work-stream naming is incomplete"
+        : "Sessions are up to date",
       contentReady: true,
-      assignmentsReady: true,
-      mapPending: !!metadata.mapPending,
+      assignmentsReady: !metadata.namingPending,
+      mapPending: projectionNeedsRefresh(metadata),
       warnings: (metadata.warnings || [])
         .map((item) => (typeof item === "string" ? item : item.message))
         .filter(Boolean),
@@ -132,11 +137,13 @@ function startIndexWorker(options = {}, { automatic = false } = {}) {
       new Error("Another Atlas index update is already running."),
     );
   job = {
-    phase: options.analysisOnly
-      ? "analysing"
-      : options.projectionOnly
-        ? "projecting"
-        : "importing",
+    phase: options.namingOnly
+      ? "naming"
+      : options.analysisOnly
+        ? "analysing"
+        : options.projectionOnly
+          ? "projecting"
+          : "importing",
     done: 0,
     total: 0,
     automatic,
@@ -144,7 +151,11 @@ function startIndexWorker(options = {}, { automatic = false } = {}) {
   return new Promise((resolve, reject) => {
     let failure = null;
     const current = new Worker(new URL("./worker.js", import.meta.url), {
-      workerData: { config: getConfig(db), ...options },
+      workerData: {
+        config: getConfig(db),
+        retryNaming: !automatic,
+        ...options,
+      },
     });
     worker = current;
     current.on("message", (message) => {
@@ -281,6 +292,12 @@ app.get(
         ? {
             version: run.id,
             ...JSON.parse(run.data),
+            namingPending:
+              JSON.parse(run.data).namingPending ||
+              (!!JSON.parse(run.data).densityPolicy &&
+                !JSON.parse(run.data).densityNamingPolicy),
+            mapPending: projectionNeedsRefresh(JSON.parse(run.data)),
+            hierarchyUpdatedAt: JSON.parse(run.data).hierarchyUpdatedAt,
             generatedAt: run.created_at,
             stale:
               run.fingerprint !==
@@ -417,6 +434,19 @@ app.post("/api/analysis/rebuild", (req, res) => {
   void startIndexWorker({ analysisOnly: true }).catch(() => {});
   res.status(202).json(job);
 });
+app.post("/api/analysis/name", (req, res) => {
+  if (busyIndex() || syncCoordinator.snapshot().running)
+    return res
+      .status(409)
+      .json({ error: "Wait for the current Atlas task to finish." });
+  const metadata = JSON.parse(activeAnalysis(db)?.data || "{}");
+  void startIndexWorker(
+    metadata.densityPolicy || metadata.workstreamPolicy
+      ? { namingOnly: true }
+      : {},
+  ).catch(() => {});
+  res.status(202).json(job);
+});
 app.post("/api/map/refresh", (req, res) => {
   if (busyIndex() || syncCoordinator.snapshot().running)
     return res
@@ -455,13 +485,15 @@ app.post("/api/stop", (req, res) => {
   ).run();
   res.json({ ok: true });
 });
-app.get("/api/map", (req, res) => {
-  res.json({
-    ...readMap(db, parseScope(req.query), getConfig(db).embeddingModel),
-    method: "UMAP · semantic conversation similarity",
-    sampled: true,
-  });
-});
+app.get(
+  "/api/map",
+  asyncRoute(async (req, res) => {
+    const scope = parseScope(req.query),
+      model = getConfig(db).embeddingModel;
+    const data = await withTopicNames(db, () => readMap(db, scope, model));
+    res.json({ ...data, method: "UMAP · conversation topics", sampled: true });
+  }),
+);
 app.get("/api/recent", (req, res) => {
   const { sql, params } = scopeWhere(parseScope(req.query));
   const rows = db
@@ -780,24 +812,25 @@ app.post(
     });
   }),
 );
-app.post("/api/topic", (req, res) => {
-  const data = readTopic(
-    db,
-    parseScope(req.body),
-    req.body.selection ?? req.body.id,
-  );
-  const {
-    evidence,
-    summaryInput,
-    summarySelection,
-    summaryFingerprint,
-    ...topic
-  } = data;
-  res.json({
-    ...topic,
-    cachedSummary: cachedSummary(db, data, getConfig(db).generationModel),
-  });
-});
+app.post(
+  "/api/topic",
+  asyncRoute(async (req, res) => {
+    const data = await withTopicNames(db, () =>
+      readTopic(db, parseScope(req.body), req.body.selection ?? req.body.id),
+    );
+    const {
+      evidence,
+      summaryInput,
+      summarySelection,
+      summaryFingerprint,
+      ...topic
+    } = data;
+    res.json({
+      ...topic,
+      cachedSummary: cachedSummary(db, data, getConfig(db).generationModel),
+    });
+  }),
+);
 app.post(
   "/api/topic/summary",
   asyncRoute(async (req, res) => {

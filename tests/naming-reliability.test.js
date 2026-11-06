@@ -135,8 +135,8 @@ test("full interpretation bounds evidence and caches naming inputs instead of th
     const evidence = streamEvidence(
       Array.from({ length: 60 }, (_, i) => candidate("session" + i)),
     );
-    assert.equal(evidence.evidence.length, 24);
-    assert.ok(JSON.stringify(evidence.evidence).length < 20000);
+    assert.equal(evidence.evidence.length, 48);
+    assert.ok(JSON.stringify(evidence.evidence).length <= 32000);
     const compact = streamEvidence([
       {
         center: [1, 0],
@@ -146,7 +146,11 @@ test("full interpretation bounds evidence and caches naming inputs instead of th
         ),
       },
     ]);
-    assert.equal(compact.evidence.length, 16);
+    assert.equal(
+      compact.evidence.length,
+      1,
+      "copied conversations cannot consume the evidence budget",
+    );
     await interpretStreams(db, [candidate()], {
       fingerprint: "first",
       nameGenerator: generate,
@@ -285,6 +289,108 @@ test("cancelling an in-flight naming request aborts the runner and never retries
     assert.equal(requests, 1);
   } finally {
     globalThis.fetch = original;
+    db.close();
+  }
+});
+
+test("a small goal gets naming evidence despite many older copied conversations in the same candidate", () => {
+  const row = (session, vector, timestamp) => ({
+    ...candidate(session).rows[0],
+    title: session,
+    text: `Investigate the concrete objective for ${session} and verify its independent deliverable.`,
+    timestamp,
+    vector,
+  });
+  const older = Array.from({ length: 100 }, (_, i) =>
+    row(`common-${i}`, [1, 0, 0], "2026-01-01"),
+  );
+  const rare = [
+    row("document-import", [0, 1, 0], "2026-01-01"),
+    row("calendar-export", [0, 0, 1], "2026-11-01"),
+  ];
+  const input = [{ center: [1, 0, 0], rows: [...older, ...rare] }];
+  const first = streamEvidence(input);
+  const titles = first.evidence.map((e) => e.title);
+  assert.ok(
+    titles.includes("document-import"),
+    "old small goals retain coverage too",
+  );
+  assert.ok(titles.includes("calendar-export"));
+  assert.ok(
+    titles.length < 10,
+    "copied evidence does not require a larger prompt",
+  );
+  const reverse = streamEvidence([
+    { ...input[0], rows: [...input[0].rows].reverse() },
+  ]);
+  assert.deepEqual(
+    reverse.evidence,
+    first.evidence,
+    "row order cannot choose which goal is visible",
+  );
+});
+
+test("explicit reinterpretation can replace an overly broad inferred stream with distinct objectives", async () => {
+  const db = fixture();
+  const a = candidate("documents"),
+    b = candidate("calendar");
+  a.rows[0].title = "Document import";
+  b.rows[0].title = "Calendar export";
+  b.rows[0].vector = [0, 1];
+  b.center = [0, 1];
+  try {
+    const result = await interpretStreams(db, [a, b], {
+      force: true,
+      previous: [
+        {
+          id: 8,
+          name: "Desktop development",
+          center: [Math.SQRT1_2, Math.SQRT1_2],
+          references: [...a.rows, ...b.rows],
+        },
+      ],
+      nameGenerator: async (_db, _system, prompt) => ({
+        sessionLabels: [],
+        streams: JSON.parse(prompt).sessions.map((s) => ({
+          name: s.title,
+          description: `Deliver the independent ${s.title.toLowerCase()} objective.`,
+          sources: [s.source],
+          background: false,
+        })),
+      }),
+    });
+    assert.deepEqual(result.map((r) => r.name).sort(), [
+      "Calendar export",
+      "Document import",
+    ]);
+    assert.ok(result.every((r) => r.rows.length === 1));
+  } finally {
+    db.close();
+  }
+});
+
+test("explicit naming retry bypasses failure backoff without discarding safe optional fallback", async () => {
+  const db = fixture();
+  let calls = 0;
+  const options = {
+    namingOptional: true,
+    nameGenerator: async () => {
+      if (++calls === 1) throw Error("Invalid model proposal");
+      return plan;
+    },
+  };
+  try {
+    await interpretStreams(db, [candidate()], options);
+    await interpretStreams(db, [candidate()], options);
+    assert.equal(calls, 1);
+    const recovered = await interpretStreams(db, [candidate()], {
+      ...options,
+      retryNaming: true,
+    });
+    assert.equal(calls, 2);
+    assert.equal(recovered[0].name, "Atlas navigation");
+    assert.equal(recovered[0].namingWarning, undefined);
+  } finally {
     db.close();
   }
 });

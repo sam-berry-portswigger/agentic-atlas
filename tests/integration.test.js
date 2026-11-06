@@ -58,7 +58,25 @@ test(
       }
       if (
         req.url === "/api/generate" &&
-        data.system.startsWith("Name sustained work streams")
+        data.system.startsWith("Identify the sustained work")
+      ) {
+        const input = JSON.parse(data.prompt);
+        return res.end(
+          JSON.stringify({
+            response: JSON.stringify({
+              goals: input.conversations.map((c) => ({
+                key: c.key,
+                objective:
+                  "Develop the local database storage and application architecture",
+                sources: [1],
+              })),
+            }),
+          }),
+        );
+      }
+      if (
+        req.url === "/api/generate" &&
+        data.system.startsWith("Name sustained pieces of work")
       ) {
         const input = JSON.parse(data.prompt);
         return res.end(

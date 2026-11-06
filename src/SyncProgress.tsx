@@ -71,14 +71,29 @@ export function SyncProgress({
   );
 }
 
-export function SyncWarnings({ job }: { job?: SyncJob }) {
-  if (!job?.warnings?.length) return null;
+export function SyncWarnings({
+  job,
+  namingPending = false,
+  onRetry,
+}: {
+  job?: SyncJob;
+  namingPending?: boolean;
+  onRetry?: () => void;
+}) {
+  if (!namingPending && !job?.warnings?.length) return null;
+  const busy = !!job && syncPhases.includes(job.phase);
   return (
     <div className="td-alert" role="status">
       <span>
-        {job.contentReady ? "Sessions are ready. " : ""}
-        {job.warnings.join(" ")}
+        {namingPending
+          ? "Sessions are indexed, but work-stream naming is incomplete."
+          : `${job?.contentReady ? "Sessions are ready. " : ""}${job?.warnings?.join(" ")}`}
       </span>
+      {namingPending && onRetry && (
+        <button disabled={busy} onClick={onRetry}>
+          Retry naming
+        </button>
+      )}
     </div>
   );
 }

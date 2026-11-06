@@ -22,6 +22,9 @@ export type Point = {
   approximate?: boolean;
   color: string;
   topicName: string;
+  workstreamId?: number;
+  workstreamName?: string;
+  workstreamColor?: string;
   analysisVersion: string;
 };
 export type Config = {
@@ -65,8 +68,10 @@ export type Status = {
     version: string | null;
     stale: boolean;
     topics: number;
+    hierarchyUpdatedAt?: string;
     generatedAt?: string;
     mapPending?: boolean;
+    namingPending?: boolean;
     contentUpdatedAt?: string;
     assignmentsUpdatedAt?: string;
     mapUpdatedAt?: string;

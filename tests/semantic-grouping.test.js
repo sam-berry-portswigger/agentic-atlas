@@ -268,3 +268,222 @@ test("versioned fallback repair preserves manual corrections, named assignments 
     db.close();
   }
 });
+
+test("a supported new objective survives similarity to an existing goal without splitting unchanged work", () => {
+  const old = row("existing", [1, 0]);
+  const newGoal = row("new-objective", normalize([0.85, 0.53]));
+  const continuation = row("continuation", normalize([1, 0.01]));
+  const groups = assignStreamRows(
+    [
+      {
+        name: "Document import",
+        description,
+        exemplars: [newGoal],
+        background: false,
+      },
+    ],
+    [{ center: normalize([1, 1]), rows: [old, newGoal, continuation] }],
+    {
+      previous: [
+        { id: 1, name: "Calendar export", center: [1, 0], references: [old] },
+      ],
+    },
+  );
+  assert.deepEqual(
+    groups
+      .find((g) => g.name === "Calendar export")
+      .rows.map((r) => r.id)
+      .sort(),
+    ["continuation", "existing"],
+  );
+  assert.deepEqual(
+    groups.find((g) => g.name === "Document import").rows.map((r) => r.id),
+    ["new-objective"],
+  );
+});
+
+test("validated source ownership overrides a misleading whole-history neighbour", () => {
+  const request = row("current-request", [1, 0]);
+  request.session = "changed-goal";
+  const history = { ...row("old-history", [1, 0]), session: request.session };
+  const unrelated = row("unrelated", [1, 0]);
+  const candidates = [{ center: [1, 0], rows: [request, history, unrelated] }];
+  const plans = validateStreamPlan(
+    {
+      streams: [
+        {
+          name: "Document import",
+          description:
+            "Deliver the new document import workflow requested in this conversation.",
+          sources: [1],
+          background: false,
+        },
+      ],
+    },
+    candidates,
+    new Map([[1, request]]),
+  );
+  const groups = assignStreamRows(plans, candidates, {
+    previous: [
+      {
+        id: 1,
+        name: "Calendar export",
+        center: [1, 0],
+        references: [unrelated],
+      },
+    ],
+  });
+  const reviewed = groups.find((g) => g.name === "Document import");
+  assert.deepEqual(reviewed.rows.map((r) => r.id).sort(), [
+    "current-request",
+    "old-history",
+  ]);
+  assert.deepEqual(reviewed.explicitSessions, ["changed-goal"]);
+});
+
+test("conflicting direct source claims abstain instead of choosing the closest history vector", () => {
+  const request = row("uncertain", [1, 0]);
+  const candidates = [{ center: [1, 0], rows: [request] }];
+  const plans = validateStreamPlan(
+    {
+      streams: ["Document import", "Calendar export"].map((name) => ({
+        name,
+        description,
+        sources: [1],
+        background: false,
+      })),
+    },
+    candidates,
+    new Map([[1, request]]),
+  );
+  const groups = assignStreamRows(plans, candidates, {
+    previous: [
+      { id: 1, name: "Calendar export", center: [1, 0], references: [request] },
+    ],
+  });
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].background, true);
+  assert.deepEqual(groups[0].explicitSessions, ["uncertain"]);
+});
+
+test("corrective rebuild can repair one reviewed member while preserving unsampled established work", async () => {
+  const db = database();
+  try {
+    add(db, "a-reviewed", [1, 0]);
+    add(db, "z-unsampled", [1, 0]);
+    db.prepare("INSERT INTO analysis_runs VALUES(?,?,?,?,?,?)").run(
+      "before",
+      "before",
+      "embeddinggemma",
+      "mock",
+      "2026-10-30",
+      JSON.stringify({ method: "workstreams-v2", backgroundIds: [] }),
+    );
+    db.prepare("INSERT INTO analysis_topics VALUES(?,?,?,?,?,?)").run(
+      "before",
+      1,
+      "Calendar export",
+      description,
+      "#123456",
+      vectorBuffer([1, 0]),
+    );
+    for (const id of ["a-reviewed", "z-unsampled"])
+      db.prepare("INSERT INTO analysis_members VALUES(?,?,?,?,?)").run(
+        "before",
+        id,
+        1,
+        0.2,
+        0.7,
+      );
+    db.prepare("INSERT INTO analysis_state VALUES('active','before')").run();
+    const version = await analyseArchive(db, {
+      force: true,
+      projectMap: false,
+      nameGenerator: async (_db, _system, prompt) => ({
+        sessionLabels: [],
+        streams: [
+          {
+            name: "Document import",
+            description,
+            sources: JSON.parse(prompt)
+              .sessions.filter((s) => s.title === "a-reviewed")
+              .map((s) => s.source),
+            background: false,
+          },
+        ],
+      }),
+    });
+    const membership = db
+      .prepare(
+        "SELECT c.session,t.name FROM analysis_members m JOIN chunks c ON c.id=m.chunk_id JOIN analysis_topics t ON t.version=m.version AND t.id=m.topic_id WHERE m.version=? ORDER BY c.session",
+      )
+      .all(version);
+    assert.deepEqual(
+      membership.map((r) => [r.session, r.name]),
+      [
+        ["a-reviewed", "Document import"],
+        ["z-unsampled", "Calendar export"],
+      ],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("direct source review cannot rename a manually protected stream by taking its only member", async () => {
+  const db = database();
+  try {
+    add(db, "manual", [1, 0]);
+    db.prepare("INSERT INTO analysis_runs VALUES(?,?,?,?,?,?)").run(
+      "before",
+      "before",
+      "embeddinggemma",
+      "mock",
+      "2026-10-30",
+      JSON.stringify({ method: "workstreams-v2", backgroundIds: [] }),
+    );
+    db.prepare("INSERT INTO analysis_topics VALUES(?,?,?,?,?,?)").run(
+      "before",
+      1,
+      "Calendar export",
+      description,
+      "#123456",
+      vectorBuffer([1, 0]),
+    );
+    db.prepare("INSERT INTO analysis_members VALUES(?,?,?,?,?)").run(
+      "before",
+      "manual",
+      1,
+      0.2,
+      0.7,
+    );
+    db.prepare("INSERT INTO analysis_state VALUES('active','before')").run();
+    db.prepare(
+      "INSERT INTO analysis_state VALUES('stream_session_assignments',?)",
+    ).run(JSON.stringify({ manual: 1 }));
+    const version = await analyseArchive(db, {
+      force: true,
+      projectMap: false,
+      nameGenerator: async () => ({
+        sessionLabels: [],
+        streams: [
+          {
+            name: "Document import",
+            description,
+            sources: [1],
+            background: false,
+          },
+        ],
+      }),
+    });
+    const assigned = db
+      .prepare(
+        "SELECT t.id,t.name FROM analysis_members m JOIN analysis_topics t ON t.version=m.version AND t.id=m.topic_id WHERE m.version=? AND m.chunk_id='manual'",
+      )
+      .get(version);
+    assert.equal(assigned.id, 1);
+    assert.equal(assigned.name, "Calendar export");
+  } finally {
+    db.close();
+  }
+});

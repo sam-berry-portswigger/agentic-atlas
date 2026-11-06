@@ -1,5 +1,9 @@
+import { publishDensityGroups } from "./numerical-streams.js";
 import { vectorArray } from "./db.js";
 import { PROJECTION_POLICY, projectTopics } from "./projection.js";
+export const projectionNeedsRefresh = (data) =>
+  !!data.mapPending || data.projection?.policy !== PROJECTION_POLICY;
+
 export function publishProjection(db, version, ids, result) {
   const current = db
     .prepare("SELECT value FROM analysis_state WHERE key='active'")
@@ -45,6 +49,8 @@ export function publishProjection(db, version, ids, result) {
       conversation.run(x, y, version, id);
       legacy.run(x, y, id);
     });
+    if (result.labels && ids.length >= 6)
+      Object.assign(data, publishDensityGroups(db, version, ids, result));
     db.prepare("UPDATE analysis_runs SET data=? WHERE id=?").run(
       JSON.stringify(data),
       version,
@@ -56,16 +62,12 @@ export function publishProjection(db, version, ids, result) {
   }
 }
 export async function upgradeProjection(db, run, options = {}) {
-  if (
-    JSON.parse(run.data).projection?.policy === PROJECTION_POLICY &&
-    !JSON.parse(run.data).mapPending
-  )
-    return;
+  if (!projectionNeedsRefresh(JSON.parse(run.data))) return;
   const conversations = JSON.parse(run.data).mapUnit === "conversation";
   const rows = db
     .prepare(
       conversations
-        ? "SELECT s.representative_id AS id,m.topic_id,s.vector FROM analysis_conversations s JOIN analysis_members m ON m.version=s.version AND m.chunk_id=s.representative_id WHERE s.version=? ORDER BY s.representative_id LIMIT 1800"
+        ? "SELECT s.representative_id AS id,m.topic_id,s.vector FROM analysis_conversations s JOIN analysis_members m ON m.version=s.version AND m.chunk_id=s.representative_id WHERE s.version=? ORDER BY s.session LIMIT 1800"
         : "SELECT m.chunk_id AS id,m.topic_id,c.vector FROM analysis_members m JOIN chunks c ON c.id=m.chunk_id WHERE m.version=? AND m.x IS NOT NULL ORDER BY m.chunk_id",
     )
     .all(run.id);

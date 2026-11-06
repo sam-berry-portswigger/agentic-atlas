@@ -1,3 +1,6 @@
+import { balancedObjectiveTopics } from "./balanced-groups.js";
+import { OBJECTIVE_POLICY } from "./conversation-objectives.js";
+import { refineStreamGoals } from "./refine-streams.js";
 import {
   refreshSessionRelationships,
   reconcileSessionStreams,
@@ -18,7 +21,7 @@ import { activeAnalysis, analysisFingerprint } from "./analysis-store.js";
 import { jsonGenerate } from "./work-model.js";
 import { usefulText } from "./evidence.js";
 import { readableText } from "./names.js";
-import { topicColors } from "../shared/topic-colors.js";
+import { nextTopicColor } from "../shared/topic-colors.js";
 import {
   SEMANTIC_POLICY,
   LEGACY_SEMANTIC_POLICY,
@@ -142,7 +145,9 @@ function identity(topics, previous, previousMembers) {
         });
     }
   matches.sort((a, b) => b.score - a.score);
-  const used = new Set();
+  const used = new Set(
+    topics.filter((t) => t.id !== undefined).map((t) => t.id),
+  );
   for (const match of matches)
     if (match.topic.id === undefined && !used.has(match.old.id)) {
       match.topic.id = match.old.id;
@@ -189,10 +194,12 @@ export async function analyseArchive(
     send = () => {},
     isStopped = () => false,
     force = false,
+    retryNaming = false,
     projectMap = true,
     deferMap = false,
     nameGenerator = jsonGenerate,
     scopeEmbedder = embedStreamScopes,
+    objectiveRepresenter = null,
     namingOptional = false,
     signal,
     onWarning = () => {},
@@ -203,8 +210,11 @@ export async function analyseArchive(
   const previousRun = activeAnalysis(db);
   if (
     !force &&
+    !retryNaming &&
     previousRun?.fingerprint === fingerprint &&
-    previousRun.model === config.embeddingModel
+    previousRun.model === config.embeddingModel &&
+    (!objectiveRepresenter ||
+      JSON.parse(previousRun.data).objectivePolicy === OBJECTIVE_POLICY)
   ) {
     if (projectMap)
       await upgradeProjection(db, previousRun, { send, isStopped });
@@ -226,7 +236,14 @@ export async function analyseArchive(
     rows.length,
     "Grouping conversations and saving topic membership",
   );
-  const conversations = conversationVectors(rows);
+  const conversations = objectiveRepresenter
+    ? await objectiveRepresenter(db, conversationVectors(rows), {
+        nameGenerator,
+        signal,
+        isStopped,
+        send,
+      })
+    : conversationVectors(rows);
   const training = [...conversations]
     .sort((a, b) =>
       createHash("sha256")
@@ -274,7 +291,9 @@ export async function analyseArchive(
     previous,
     conversations,
     oldMembers,
-    scopeEmbedder ? await scopeEmbedder(db, previous) : new Map(),
+    scopeEmbedder && !objectiveRepresenter
+      ? await scopeEmbedder(db, previous)
+      : new Map(),
     JSON.parse(
       db
         .prepare(
@@ -283,21 +302,96 @@ export async function analyseArchive(
         .get()?.value || "{}",
     ),
   );
-  topics = await interpretStreams(db, topics, {
-    previous:
-      previousRun && JSON.parse(previousRun.data).method === STREAM_METHOD
-        ? previous
-        : [],
-    fingerprint,
-    force,
-    send,
-    isStopped,
-    nameGenerator,
-    conversations,
-    namingOptional,
-    signal,
-    onWarning,
-  });
+  topics = objectiveRepresenter
+    ? balancedObjectiveTopics(conversations)
+    : await interpretStreams(db, topics, {
+        previous:
+          !objectiveRepresenter &&
+          previousRun &&
+          JSON.parse(previousRun.data).method === STREAM_METHOD
+            ? previous
+            : [],
+        fingerprint,
+        force,
+        send,
+        isStopped,
+        nameGenerator,
+        conversations,
+        namingOptional,
+        retryNaming,
+        signal,
+        onWarning,
+      });
+  // A corrective rebuild retains unsampled established work, while allowing
+  // validated direct source review to correct even a single wrong assignment.
+  // Uncertainty alone cannot erase an established named goal.
+  if (
+    force &&
+    !objectiveRepresenter &&
+    previousRun &&
+    JSON.parse(previousRun.data).method === STREAM_METHOD
+  ) {
+    const labels = topics.flatMap((t) => t.sessionLabels || []);
+    const assigned = new Set();
+    const corrections = JSON.parse(
+      db
+        .prepare(
+          "SELECT value FROM analysis_state WHERE key='stream_session_assignments'",
+        )
+        .get()?.value || "{}",
+    );
+    const reviewed = new Set(
+      topics
+        .filter((t) => !isFallback(t))
+        .flatMap((t) => t.explicitSessions || [])
+        .filter((session) => !Object.hasOwn(corrections, session)),
+    );
+    const saved = previous
+      .map((t) => {
+        const members = rows.filter(
+          (r) => oldMembers.get(r.id) === t.id && !reviewed.has(r.session),
+        );
+        members.forEach((r) => assigned.add(r.id));
+        const sessions = new Set(members.map((r) => r.session));
+        return {
+          ...t,
+          center: t.center,
+          rows: members,
+          sessionLabels: labels.filter((l) => sessions.has(l.session)),
+        };
+      })
+      .filter((t) => t.rows.length);
+    for (const topic of topics) {
+      const additions = topic.rows.filter((r) => !assigned.has(r.id));
+      if (additions.length) saved.push({ ...topic, rows: additions });
+    }
+    topics = saved;
+  }
+  try {
+    if (!objectiveRepresenter)
+      topics = await refineStreamGoals(db, topics, conversations, {
+        nameGenerator,
+        signal,
+        isStopped,
+        send,
+        onWarning,
+      });
+  } catch (error) {
+    signal?.throwIfAborted();
+    if (isStopped() || force || !namingOptional) throw error;
+    const warning = {
+      stage: "naming",
+      code: "naming-pending",
+      category: "generation-or-validation",
+      reason: error.message,
+      message:
+        "Sessions are indexed, but work-stream naming is incomplete. Retry naming.",
+      retryAfter: new Date(Date.now() + 60000).toISOString(),
+    };
+    onWarning(warning);
+    send("warning", 0, 0, warning.message);
+    topics = topics.map((topic) => ({ ...topic, namingWarning: warning }));
+  }
   const sessionLabels = topics.flatMap((t) => t.sessionLabels || []);
   // IDs and colours identify the end goal, not the current date or selected sources.
   identity(
@@ -362,8 +456,7 @@ export async function analyseArchive(
   for (const topic of topics)
     if (topic.id === undefined) {
       topic.id = nextId++;
-      topic.color = topicColors.find((color) => !usedColors.has(color));
-      if (!topic.color) throw Error("Too many simultaneous work streams.");
+      topic.color = nextTopicColor(usedColors);
       usedColors.add(topic.color);
     }
   const corrections = JSON.parse(
@@ -391,6 +484,13 @@ export async function analyseArchive(
       };
       topics.push(target);
     }
+    const manualTopic = previous.find((t) => t.id === id);
+    if (manualTopic)
+      Object.assign(target, {
+        name: manualTopic.name,
+        description: manualTopic.description,
+        color: manualTopic.color,
+      });
     for (const topic of topics)
       topic.rows = topic.rows.filter((r) => r.session !== session);
     target.rows.push(...matching);
@@ -411,7 +511,9 @@ export async function analyseArchive(
   );
   let coordinates = new Map(),
     projection = null;
-  const plotted = training;
+  const plotted = [...training].sort((a, b) =>
+    a.session.localeCompare(b.session),
+  );
   const oldPositions =
     previousRun?.model === config.embeddingModel
       ? db
@@ -439,13 +541,18 @@ export async function analyseArchive(
     })
   ) {
     coordinates = new Map(plotted.map((r) => [r.id, positionsById.get(r.id)]));
-    projection = JSON.parse(previousRun.data).projection;
+    projection = {
+      ...JSON.parse(previousRun.data).projection,
+      // Reusing geometry must also retain its density memberships during a
+      // rebuild, rather than replacing them with generated legacy assignments.
+      labels: undefined,
+    };
   } else if (projectMap && plotted.length >= 3) {
     const labels = plotted.map((row) => assignments.get(row.id));
     projection = await projectTopics(
       plotted.map((row) => row.vector),
       labels,
-      { send, isStopped },
+      { send, isStopped, signal },
     );
     coordinates = new Map(
       plotted.map((row, i) => [
@@ -484,14 +591,20 @@ export async function analyseArchive(
         method: STREAM_METHOD,
         backgroundIds: topics.filter((t) => t.background).map((t) => t.id),
         algorithm: "embedding-candidates-shared-workstreams-v1",
+        groupingPolicy: "objective-neighborhoods-v1",
         // Connected v3 clients treat this as their one-time repair marker.
         // Version the new classifier separately so they cannot erase its map.
         semanticPolicy: LEGACY_SEMANTIC_POLICY,
         conversationPolicy: SEMANTIC_POLICY,
         representation: CONVERSATION_POLICY,
+        ...(objectiveRepresenter ? { objectivePolicy: OBJECTIVE_POLICY } : {}),
         mapUnit: "conversation",
         mapPending: deferMap,
-        projection: projection && { ...projection, points: undefined },
+        projection: projection && {
+          ...projection,
+          points: undefined,
+          labels: undefined,
+        },
         namingPending: topics.some((topic) => topic.namingWarning),
         warnings: [
           ...new Map(

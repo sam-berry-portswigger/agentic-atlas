@@ -33,7 +33,15 @@ export function reconcileSessionStreams(db, version = activeAnalysis(db)?.id) {
       "SELECT parent,child FROM session_relationships ORDER BY parent,child",
     )
     .all();
-  const signature = JSON.stringify([version, corrections, recorded]);
+  const densityPolicy = JSON.parse(
+    activeAnalysis(db, version)?.data || "{}",
+  ).densityPolicy;
+  const signature = JSON.stringify([
+    version,
+    corrections,
+    recorded,
+    densityPolicy,
+  ]);
   if (reconciled.get(db) === signature) return 0;
   const groups = db
     .prepare(
@@ -50,6 +58,7 @@ export function reconcileSessionStreams(db, version = activeAnalysis(db)?.id) {
       .all(version)
       .map((r) => [r.session, r.topic_id]),
   );
+  const published = new Set(own.keys());
   for (const r of groups)
     if (!own.has(r.session)) own.set(r.session, r.topic_id);
   const valid = new Set(
@@ -69,6 +78,10 @@ export function reconcileSessionStreams(db, version = activeAnalysis(db)?.id) {
   const resolve = (sid, seen = new Set()) => {
     if (Object.hasOwn(corrections, sid) && valid.has(corrections[sid]))
       return corrections[sid];
+    // Density publication already classified each conversation. Ancestry is
+    // navigation metadata and cannot replace that saved assignment.
+    if ((densityPolicy || published.has(sid)) && own.has(sid))
+      return own.get(sid);
     if (seen.has(sid)) return cycle;
     seen.add(sid);
     const ps = parents.get(sid);

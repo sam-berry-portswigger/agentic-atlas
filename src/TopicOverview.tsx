@@ -14,6 +14,7 @@ export type WorkItemSelection = {
 export type StreamSelection = {
   kind: "stream";
   streamId: number;
+  scope?: { project: string; start: string; end: string };
   analysisVersion?: string;
 };
 export type TopicSelection =

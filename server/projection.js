@@ -1,14 +1,5 @@
-import { UMAP } from "umap-js";
-export const PROJECTION_POLICY = "embedding-neighborhood-v2";
-function random(seed = 42) {
-  return () => {
-    seed |= 0;
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+import { runMap } from "./map-runner.js";
+export const PROJECTION_POLICY = "cosine-umap15-density6-leaf-v1";
 export function normalizeProjection(points) {
   if (!points.length) return [];
   const xs = points.map((p) => p[0]),
@@ -152,7 +143,7 @@ export function projectionMetrics(points, reference) {
       Array.from(topicLargest.values()).reduce((a, b) => a + b, 0) / n,
   };
 }
-// Labels are diagnostics only, including when comparing experimental layouts.
+// Labels are diagnostics only: geometry depends solely on the numeric vectors.
 export function chooseProjection(candidates) {
   return candidates.reduce(
     (best, candidate) =>
@@ -162,11 +153,23 @@ export function chooseProjection(candidates) {
     null,
   );
 }
-export async function projectTopics(
-  vectors,
-  labels,
-  { send = () => {}, isStopped = () => false } = {},
-) {
+export async function projectTopics(vectors, labels, options = {}) {
+  const { send = () => {}, isStopped = () => false, signal } = options;
+  signal?.throwIfAborted();
+  if (isStopped()) throw new Error("Projection cancelled.");
+  if (vectors.length > 1800)
+    throw new Error("Map projection is limited to 1,800 conversations.");
+  if (
+    vectors.some(
+      (v) =>
+        !v.length ||
+        v.length !== vectors[0].length ||
+        !Array.from(v).every(Number.isFinite),
+    )
+  )
+    throw new Error(
+      "Projection requires finite vectors of equal nonzero dimension.",
+    );
   if (vectors.length < 3)
     return {
       points: normalizeProjection(vectors.map((_, i) => [i, 0])),
@@ -174,46 +177,21 @@ export async function projectTopics(
       candidates: [],
       selected: "small-sample",
     };
-  send("projecting", 0, 1000, "Building exact embedding neighbourhoods");
+  send("projecting", 0, 1000, "Building conversation neighbourhoods");
+  const projected = await runMap(
+    vectors.map((v) => Array.from(v)),
+    options,
+  );
+  signal?.throwIfAborted();
+  if (isStopped()) throw new Error("Projection cancelled.");
+  const points = normalizeProjection(projected.points);
   const reference = projectionReference(vectors, labels);
+  signal?.throwIfAborted();
   if (isStopped()) throw new Error("Projection cancelled.");
-  // Measured on the map's 1,800 embeddings against PCA, t-SNE, PaCMAP and
-  // UMAP settings. More neighbours retain broader connections; more negative
-  // samples and epochs improve fidelity without consulting topic assignments.
-  const name = "semantic-exact-100",
-    nNeighbors = Math.min(100, vectors.length - 1);
-  const umap = new UMAP({
-    nComponents: 2,
-    nNeighbors,
-    minDist: 0.08,
-    nEpochs: 1000,
-    negativeSampleRate: 30,
-    random: random(),
-  });
-  umap.setPrecomputedKNN(
-    reference.neighbors.map((row, i) => [i, ...row].slice(0, nNeighbors)),
-    reference.neighbors.map((row, i) =>
-      [0, ...row.map((j) => reference.distances[i][j])].slice(0, nNeighbors),
-    ),
-  );
-  const points = normalizeProjection(
-    await umap.fitAsync(
-      vectors.map((v) => Array.from(v)),
-      (epoch) => {
-        if (epoch % 30 === 0)
-          send(
-            "projecting",
-            epoch,
-            1000,
-            "Preserving embedding neighbourhoods",
-          );
-        return !isStopped();
-      },
-    ),
-  );
-  if (isStopped()) throw new Error("Projection cancelled.");
+  const name = "cosine-umap15-density6-leaf";
   return {
     points,
+    labels: projected.labels,
     policy: PROJECTION_POLICY,
     selected: name,
     candidates: [
@@ -222,11 +200,15 @@ export async function projectTopics(
         parameters: {
           algorithm: "umap",
           metric: "cosine",
-          neighborSearch: "exact",
-          nNeighbors,
+          implementation: projected.implementation,
+          implementationVersion: projected.version,
+          neighbors: 15,
           minDist: 0.08,
-          nEpochs: 1000,
           negativeSampleRate: 30,
+          clustering: "hdbscan",
+          minClusterSize: 6,
+          minSamples: 3,
+          clusterSelection: "leaf",
           seed: 42,
         },
         metrics: projectionMetrics(points, reference),

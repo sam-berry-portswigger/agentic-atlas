@@ -30,6 +30,7 @@ import { DatabaseSync } from "node:sqlite";
 import { getConfig, vectorArray, normalize, cosine } from "./db.js";
 import { activeAnalysis } from "./analysis-store.js";
 import { sessionFiles, codexSessionFiles, extractText } from "./parser.js";
+import { withTopicNames } from "./topic-name-context.js";
 import {
   createTodayService,
   saveTodayLayout,
@@ -883,7 +884,13 @@ export function mountToday(app, db, { discover = discoverToday } = {}) {
         s.title = displayName(s.id, s.originalTitle, s.project, s.lastRequest);
       }
       attachFamilyPreferences(db, value.sessions, value.edges);
-      const semantics = attachTodayStreams(db, value.sessions, value.edges);
+      const namingScope = {
+        start: new Date(start).toISOString(),
+        end: new Date(end).toISOString(),
+      };
+      const semantics = await withTopicNames(db, () =>
+        attachTodayStreams(db, value.sessions, value.edges, namingScope),
+      );
       disambiguateSessionTitles(value.sessions);
       attachUnread(db, value.sessions, start, end);
       lastSnapshot = value;

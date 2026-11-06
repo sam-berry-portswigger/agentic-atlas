@@ -1,4 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
+import { balancedObjectiveGroup } from "./balanced-groups.js";
+import { shortName } from "./names.js";
+import { OBJECTIVE_POLICY } from "./conversation-objectives.js";
 import { activeAnalysis, analysisFingerprint } from "./analysis-store.js";
 import { analyseArchive } from "./analysis.js";
 import { getConfig, vectorArray, vectorBuffer, cosine } from "./db.js";
@@ -18,7 +21,7 @@ import {
   reconcileSessionStreams,
   invalidateSessionStreams,
 } from "./session-streams.js";
-import { topicColors } from "../shared/topic-colors.js";
+import { nextTopicColor } from "../shared/topic-colors.js";
 
 // Called inside the importer's transactions, including evidence-only imports.
 // This journal survives a failed/cancelled run so the next sync can resume.
@@ -95,11 +98,13 @@ export async function updateCatalogue(
   db,
   {
     changedSessions = [],
+    retryNaming = false,
     send = () => {},
     isStopped = () => false,
     signal,
     // Dependency injection keeps first-run/cancellation tests off real models.
     bootstrap = analyseArchive,
+    objectiveRepresenter = null,
   } = {},
 ) {
   cancelled(signal, isStopped);
@@ -109,15 +114,22 @@ export async function updateCatalogue(
   const metadata = JSON.parse(previous?.data || "{}");
   if (
     !previous ||
+    (objectiveRepresenter && metadata.objectivePolicy !== OBJECTIVE_POLICY) ||
+    (retryNaming && metadata.namingPending && !metadata.densityPolicy) ||
     previous.model !== config.embeddingModel ||
     metadata.mapUnit !== "conversation" ||
     metadata.conversationPolicy !== SEMANTIC_POLICY
   ) {
     const warnings = [];
     const version = await bootstrap(db, {
+      objectiveRepresenter,
+      ...(objectiveRepresenter && metadata.objectivePolicy !== OBJECTIVE_POLICY
+        ? { force: true }
+        : {}),
       projectMap: false,
       deferMap: true,
       namingOptional: true,
+      retryNaming: retryNaming && !!metadata.namingPending,
       signal,
       send,
       isStopped,
@@ -127,14 +139,15 @@ export async function updateCatalogue(
     // Clear only the entries observed before bootstrapping. Import is protected
     // by the shared writer lock; readers may continue using the prior snapshot.
     if (version) db.prepare("DELETE FROM analysis_dirty_sessions").run();
+    const savedMetadata = JSON.parse(activeAnalysis(db)?.data || "{}");
     return {
       version,
       changedSessions: changedSessions.length,
       unchanged: false,
       mapPending: true,
-      warnings,
+      warnings: savedMetadata.warnings || warnings,
       contentReady: true,
-      assignmentsReady: !!version,
+      assignmentsReady: !!version && !savedMetadata.namingPending,
     };
   }
 
@@ -170,7 +183,7 @@ export async function updateCatalogue(
       mapPending: !!metadata.mapPending,
       warnings: metadata.warnings || [],
       contentReady: true,
-      assignmentsReady: true,
+      assignmentsReady: !metadata.namingPending,
     };
 
   send(
@@ -248,10 +261,22 @@ export async function updateCatalogue(
       mapPending: !!metadata.mapPending,
       warnings: metadata.warnings || [],
       contentReady: true,
-      assignmentsReady: true,
+      assignmentsReady: !metadata.namingPending,
     };
   }
 
+  if (objectiveRepresenter) {
+    const represented = await objectiveRepresenter(
+      db,
+      changed
+        .filter((item) => item.conversation)
+        .map((item) => item.conversation),
+      { signal, isStopped, send },
+    );
+    const bySession = new Map(represented.map((c) => [c.session, c]));
+    for (const item of changed)
+      if (item.conversation) item.conversation = bySession.get(item.session);
+  }
   const cached = db
     .prepare(
       "SELECT s.*,m.topic_id FROM analysis_conversations s LEFT JOIN analysis_members m ON m.version=s.version AND m.chunk_id=s.representative_id WHERE s.version=?",
@@ -305,9 +330,37 @@ export async function updateCatalogue(
       }));
       let topic =
         topics.find((t) => t.id === corrections[item.session]) ||
-        (prior && !prior.background
+        // Preserve an inferred assignment for an unchanged representation, not
+        // indefinitely after the conversation has acquired a different goal.
+        (prior &&
+        !prior.background &&
+        old &&
+        cosine(item.conversation.vector, vectorArray(old.vector)) >= 0.9995
           ? prior
-          : semanticConversationGroup(item.conversation.vector, candidates));
+          : item.conversation.objectiveUnclear
+            ? null
+            : objectiveRepresenter
+              ? balancedObjectiveGroup(item.conversation, candidates)
+              : semanticConversationGroup(
+                  item.conversation.vector,
+                  candidates,
+                ));
+      if (
+        !topic &&
+        objectiveRepresenter &&
+        !item.conversation.objectiveUnclear
+      ) {
+        topic = {
+          id: Math.max(-1, ...topics.map((t) => t.id)) + 1,
+          name: shortName(item.conversation.objective, 80),
+          description: item.conversation.objective,
+          center: item.conversation.vector,
+          references: [],
+          background: false,
+          color: nextTopicColor(new Set(topics.map((t) => t.color))),
+        };
+        topics.push(topic);
+      }
       if (!topic) {
         if (!fallback) {
           const used = new Set(topics.map((t) => t.color));
@@ -317,7 +370,7 @@ export async function updateCatalogue(
                 -1) + 1,
             name: "Other sessions",
             description: OTHER_DESCRIPTION,
-            color: topicColors.find((color) => !used.has(color)) || "#92ae77",
+            color: nextTopicColor(used),
             center: item.conversation.vector,
             background: true,
             references: [],
@@ -499,7 +552,7 @@ export async function updateCatalogue(
       mapPending,
       warnings: nextMetadata.warnings || [],
       contentReady: true,
-      assignmentsReady: true,
+      assignmentsReady: !nextMetadata.namingPending,
     };
   } catch (error) {
     db.exec("ROLLBACK");

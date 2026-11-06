@@ -87,7 +87,15 @@ test(
       let raw = "";
       for await (const part of req) raw += part;
       const body = raw ? JSON.parse(raw) : {};
-      calls.push({ route: req.url, inputs: body.input?.length || 0 });
+      calls.push({
+        route: req.url,
+        inputs: body.input?.length || 0,
+        hierarchy:
+          Array.isArray(body.input) &&
+          body.input.every((text) =>
+            text.startsWith("title: Atlas interface | text:"),
+          ),
+      });
       res.setHeader("Content-Type", "application/json");
       if (req.url === "/api/embed")
         return res.end(
@@ -100,7 +108,7 @@ test(
       res.statusCode = 500;
       res.end(
         JSON.stringify({
-          error: "Generation must not run during routine sync",
+          error: "Topic naming must not run during routine sync",
         }),
       );
     });
@@ -180,8 +188,16 @@ test(
       assert.equal(first.job.contentReady, true);
       assert.equal(first.job.assignmentsReady, true);
       assert.equal(first.job.mapPending, true);
-      assert.equal(calls.filter((c) => c.route === "/api/embed").length, 1);
+      assert.equal(
+        calls.filter((c) => c.route === "/api/embed" && !c.hierarchy).length,
+        1,
+      );
       assert.equal(calls.filter((c) => c.route === "/api/generate").length, 0);
+      assert.equal(
+        calls.filter((c) => c.hierarchy).length,
+        0,
+        "only the new topic description needs a cached scope embedding",
+      );
       const initialMs = Date.now() - began;
       // Multiple clients requesting the same no-op sync must not create workers.
       const before = calls.length;
@@ -209,9 +225,13 @@ test(
           s.catalogueRevision !== first.catalogueRevision,
         36000,
       );
-      assert.equal(calls.filter((c) => c.route === "/api/embed").length, 2);
       assert.equal(
-        calls.filter((c) => c.route === "/api/embed").at(-1).inputs,
+        calls.filter((c) => c.route === "/api/embed" && !c.hierarchy).length,
+        2,
+      );
+      assert.equal(
+        calls.filter((c) => c.route === "/api/embed" && !c.hierarchy).at(-1)
+          .inputs,
         1,
       );
       assert.equal(calls.filter((c) => c.route === "/api/generate").length, 0);
@@ -233,7 +253,10 @@ test(
         "pause survives restarting the backend",
       );
       await delay(700);
-      assert.equal(calls.filter((c) => c.route === "/api/embed").length, 2);
+      assert.equal(
+        calls.filter((c) => c.route === "/api/embed" && !c.hierarchy).length,
+        2,
+      );
       await request("sync", {});
       const resumed = await until(
         (s) =>
@@ -241,7 +264,10 @@ test(
           s.catalogueRevision !== second.catalogueRevision,
       );
       assert.equal(resumed.autoSync.paused, false);
-      assert.equal(calls.filter((c) => c.route === "/api/embed").length, 3);
+      assert.equal(
+        calls.filter((c) => c.route === "/api/embed" && !c.hierarchy).length,
+        3,
+      );
       assert.equal(calls.filter((c) => c.route === "/api/generate").length, 0);
       const inspect = new DatabaseSync(path.join(dataDir, "atlas.sqlite"), {
         readOnly: true,
@@ -271,7 +297,8 @@ test(
           automaticInitialMs: initialMs,
           periodicAppendMs: periodicMs,
           embeddingRequests: 3,
-          generationRequests: 0,
+          hierarchyEmbeddingRequests: calls.filter((c) => c.hierarchy).length,
+          namingRequests: 0,
           noOpRequests: 8,
         }),
       );

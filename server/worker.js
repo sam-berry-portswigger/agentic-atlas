@@ -1,3 +1,5 @@
+import { refreshSavedDensityGroups } from "./numerical-streams.js";
+import { nameDensityGroups } from "./density-naming.js";
 import { parentPort, workerData } from "node:worker_threads";
 import { stat } from "node:fs/promises";
 import { openDb, vectorBuffer, normalize } from "./db.js";
@@ -26,14 +28,42 @@ const heartbeat = setInterval(() => reporter.heartbeat(), 1000);
 heartbeat.unref();
 let result = {};
 async function index() {
+  if (workerData.namingOnly) {
+    await nameDensityGroups(db, {
+      refresh: true,
+      send: progress,
+      signal: stopping.signal,
+      isStopped: () => stopped,
+    });
+    const metadata = JSON.parse(activeAnalysis(db)?.data || "{}");
+    result = {
+      contentReady: true,
+      assignmentsReady: !metadata.namingPending,
+      mapPending: !!metadata.mapPending,
+      warnings: metadata.warnings || [],
+    };
+    return;
+  }
   if (workerData.projectionOnly) {
     const run = activeAnalysis(db);
     if (run)
       await upgradeProjection(db, run, {
         send: progress,
+        signal: stopping.signal,
         isStopped: () => stopped,
       });
-    result = { contentReady: true, assignmentsReady: true, mapPending: false };
+    await nameDensityGroups(db, {
+      send: progress,
+      signal: stopping.signal,
+      isStopped: () => stopped,
+    });
+    const metadata = JSON.parse(activeAnalysis(db)?.data || "{}");
+    result = {
+      contentReady: true,
+      assignmentsReady: !metadata.namingPending,
+      mapPending: false,
+      warnings: metadata.warnings || [],
+    };
     return;
   }
   if (workerData.analysisOnly) {
@@ -43,9 +73,27 @@ async function index() {
       force: true,
       signal: stopping.signal,
     });
-    result = { contentReady: true, assignmentsReady: true, mapPending: false };
+    const metadata = JSON.parse(activeAnalysis(db)?.data || "{}");
+    result = {
+      contentReady: true,
+      assignmentsReady: !metadata.namingPending,
+      mapPending: false,
+      warnings: metadata.warnings || [],
+    };
     return;
   }
+  const savedRun = activeAnalysis(db);
+  const savedData = JSON.parse(savedRun?.data || "{}");
+  if (
+    workerData.retryNaming &&
+    (savedData.densityPolicy || savedData.workstreamPolicy) &&
+    (savedData.namingPending || !savedData.densityNamingPolicy)
+  )
+    await nameDensityGroups(db, {
+      send: progress,
+      signal: stopping.signal,
+      isStopped: () => stopped,
+    });
   const { embeddingModel } = workerData.config;
   const changedSessions = new Set();
   progress("discovering", 0, 0, "Checking for changed sessions");
@@ -218,6 +266,7 @@ async function index() {
       isStopped: () => stopped,
       signal: stopping.signal,
       changedSessions: [...changedSessions],
+      retryNaming: !!workerData.retryNaming,
     });
     result = { ...catalogue, contentReady: true };
   }
@@ -226,6 +275,38 @@ let releaseLock;
 try {
   releaseLock = acquireIndexLock();
   await index();
+  if (
+    !stopped &&
+    !workerData.skipProjection &&
+    !workerData.projectionOnly &&
+    activeAnalysis(db)
+  ) {
+    try {
+      await refreshSavedDensityGroups(db, activeAnalysis(db), {
+        send: progress,
+        signal: stopping.signal,
+        isStopped: () => stopped,
+      });
+      await nameDensityGroups(db, {
+        send: progress,
+        signal: stopping.signal,
+        isStopped: () => stopped,
+      });
+      const current = JSON.parse(activeAnalysis(db).data);
+      result.assignmentsReady = !current.namingPending;
+      result.warnings = current.warnings || [];
+    } catch (error) {
+      if (!stopped) {
+        const warning = {
+          stage: "hierarchy",
+          code: "hierarchy-pending",
+          message: "Saved clusters are ready; work-stream naming is pending.",
+        };
+        result.warnings = [...(result.warnings || []), warning];
+        progress("warning", 0, 0, warning.message);
+      }
+    }
+  }
   const final = progress(
     stopped ? "paused" : "complete",
     0,

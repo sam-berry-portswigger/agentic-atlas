@@ -7,7 +7,7 @@ import {
 } from "./conversation-vectors.js";
 import { acquireIndexLock } from "./index-lock.js";
 import { invalidateSessionStreams } from "./session-streams.js";
-import { topicColors } from "../shared/topic-colors.js";
+import { nextTopicColor } from "../shared/topic-colors.js";
 
 // An explicit, reviewed correction, never an automatic re-clustering step.
 // Saved IDs and corrections let routine sync and a later rebuild preserve it.
@@ -98,8 +98,7 @@ export function splitWorkStream(
       const id =
         (db.prepare("SELECT max(id) n FROM analysis_topics").get().n ?? -1) + 1;
       const used = new Set(topics.map((t) => t.color));
-      const color = topicColors.find((c) => !used.has(c));
-      if (!color) throw Error("Too many simultaneous work streams.");
+      const color = nextTopicColor(used);
       db.prepare("INSERT INTO analysis_topics VALUES(?,?,?,?,?,?)").run(
         run.id,
         id,

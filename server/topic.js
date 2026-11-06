@@ -1,3 +1,4 @@
+import { visibleTopicLabel } from "./local-topic-labels.js";
 import { summaryFingerprint } from "./summary-cache.js";
 import { summaryContext } from "./summary-context.js";
 import { markdownExcerpt } from "../shared/markdown.js";
@@ -34,16 +35,22 @@ export function readTopic(db, scope, selection) {
         new Error("This work stream has no evidence in the selected scope."),
         { status: 404 },
       );
-    return presentTopic(db, rows, {
-      kind: "stream",
-      streamId: topic.id,
-      cluster: topic.id,
-      topicId: topic.id,
-      analysisVersion: run.id,
-      title: topic.name,
-      description: topic.description,
-      color: topic.color,
-    });
+    return presentTopic(
+      db,
+      rows,
+      {
+        kind: "stream",
+        streamId: topic.id,
+        cluster: topic.id,
+        topicId: topic.id,
+        analysisVersion: run.id,
+        title: topic.name,
+        description: topic.description,
+        color: topic.color,
+      },
+      new Set(),
+      scope,
+    );
   }
   if (selection?.kind === "work") {
     let workId = selection.workId;
@@ -156,18 +163,24 @@ export function readTopic(db, scope, selection) {
       ),
       { status: 404 },
     );
-  return presentTopic(db, rows, {
-    kind: "cluster",
-    cluster: topic.id,
-    topicId: topic.id,
-    analysisVersion: run.id,
-    title: topic.name,
-    description: topic.description,
-    color: topic.color,
-  });
+  return presentTopic(
+    db,
+    rows,
+    {
+      kind: "cluster",
+      cluster: topic.id,
+      topicId: topic.id,
+      analysisVersion: run.id,
+      title: topic.name,
+      description: topic.description,
+      color: topic.color,
+    },
+    new Set(),
+    scope,
+  );
 }
 
-function presentTopic(db, rows, metadata, anchors = new Set()) {
+function presentTopic(db, rows, metadata, anchors = new Set(), scope = {}) {
   const displayName = sessionNameResolver(db, metadata.analysisVersion);
   const usable = (row) => usefulText(row.text) && !/^\s*</.test(row.text);
   const sessions = new Map();
@@ -224,6 +237,24 @@ function presentTopic(db, rows, metadata, anchors = new Set()) {
         "Open the AI summary to explore the supporting discussion.",
     }),
   );
+  if (metadata.kind === "cluster" || metadata.kind === "stream") {
+    const label = visibleTopicLabel(
+      db,
+      metadata.analysisVersion,
+      {
+        id: metadata.topicId,
+        name: metadata.title,
+        description: metadata.description,
+      },
+      [...sessions.values()].map((s) => ({ ...s, timestamp: s.end })),
+      scope,
+    );
+    metadata = {
+      ...metadata,
+      title: label.name,
+      description: label.description,
+    };
+  }
   const anchorSessions = new Set(
     rows.filter((row) => anchors.has(row.id)).map((row) => row.session),
   );
