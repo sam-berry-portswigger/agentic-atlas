@@ -10,13 +10,35 @@ import {
   TextInput,
   Tooltip,
 } from "@mantine/core";
-import { useResizeObserver } from "@mantine/hooks";
-import { Check, Pencil, Undo2, ZoomIn, ZoomOut } from "lucide-react";
-import { useRef, useState, type PointerEvent } from "react";
-import { arrowHead, imagePoint } from "../shared/image-markup.js";
+import { useMergedRef, useResizeObserver } from "@mantine/hooks";
+import {
+  Check,
+  Highlighter,
+  Pencil,
+  Redo2,
+  Undo2,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
+import {
+  arrowHead,
+  imagePoint,
+  markupHistory,
+  wheelImageScale,
+} from "../shared/image-markup.js";
+import { imageHistoryShortcut } from "../shared/image-shortcuts.js";
 
 type Point = [number, number];
-type Tool = "view" | "pen" | "arrow" | "rectangle" | "text";
+type Tool = "view" | "pen" | "highlighter" | "arrow" | "rectangle" | "text";
 type Mark = {
   tool: Exclude<Tool, "view">;
   points: Point[];
@@ -37,14 +59,56 @@ export default function TaskImageViewer({
   draft?: boolean;
 }) {
   const [viewportRef, viewport] = useResizeObserver();
+  const viewportElement = useRef<HTMLDivElement>(null);
+  const setViewportRef = useMergedRef(viewportRef, viewportElement);
   const image = useRef<HTMLImageElement>(null);
   const active = useRef<Mark | null>(null);
+  const textMove = useRef<{
+    index: number;
+    original: Mark;
+    start: Point;
+    mark: Mark;
+    moved: boolean;
+  } | null>(null);
+  const [movingText, setMovingText] = useState<{
+    index: number;
+    mark: Mark;
+  } | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [zoom, setZoom] = useState<number | null>(null);
   const [tool, setTool] = useState<Tool>("view");
+  const [penTool, setPenTool] = useState<"pen" | "highlighter">("pen");
   const [color, setColor] = useState("#e03131");
-  const [label, setLabel] = useState("");
-  const [marks, setMarks] = useState<Mark[]>([]);
+  const [highlightColor, setHighlightColor] = useState("#ffd43b");
+  const drawColor = tool === "highlighter" ? highlightColor : color;
+  const [history, setHistory] = useState<{
+    past: Mark[][];
+    present: Mark[];
+    future: Mark[][];
+  }>({ past: [], present: [], future: [] });
+  const marks = history.present;
+  const [editingText, setEditingText] = useState<{
+    index: number | null;
+    mark: Mark;
+  } | null>(null);
+  function commit(next: Mark[]) {
+    setHistory((old) => markupHistory(old, { type: "commit", marks: next }));
+  }
+  function textMarks() {
+    if (!editingText) return marks;
+    const { index, mark } = editingText;
+    const text = mark.text?.trim() || "";
+    if (index === null) return text ? [...marks, { ...mark, text }] : marks;
+    return text
+      ? marks.map((m, i) => (i === index ? { ...mark, text } : m))
+      : marks.filter((_, i) => i !== index);
+  }
+  function finishText() {
+    if (!editingText) return;
+    const next = textMarks();
+    if (JSON.stringify(next) !== JSON.stringify(marks)) commit(next);
+    setEditingText(null);
+  }
   const [preview, setPreview] = useState<Mark | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -60,18 +124,79 @@ export default function TaskImageViewer({
       )
     : 1;
   const scale = zoom ?? fit;
+  const scaleRef = useRef(scale);
+  const zoomAnchor = useRef<{ point: Point; x: number; y: number } | null>(
+    null,
+  );
+  function zoomAt(next: number, x?: number, y?: number) {
+    const el = viewportElement.current;
+    if (!el || !image.current || active.current || textMove.current) return;
+    const rect = el.getBoundingClientRect();
+    const clientX = x ?? rect.left + el.clientWidth / 2;
+    const clientY = y ?? rect.top + el.clientHeight / 2;
+    zoomAnchor.current = {
+      point: imagePoint(
+        clientX,
+        clientY,
+        image.current.getBoundingClientRect(),
+        size.width,
+        size.height,
+      ),
+      x: clientX,
+      y: clientY,
+    };
+    scaleRef.current = next;
+    setZoom(next);
+  }
+  useLayoutEffect(() => {
+    scaleRef.current = scale;
+    const el = viewportElement.current;
+    const anchor = zoomAnchor.current;
+    if (!el || !image.current || !anchor) return;
+    const rect = image.current.getBoundingClientRect();
+    el.scrollLeft += rect.left + anchor.point[0] * scale - anchor.x;
+    el.scrollTop += rect.top + anchor.point[1] * scale - anchor.y;
+    zoomAnchor.current = null;
+  }, [scale]);
+  useEffect(() => {
+    const el = viewportElement.current;
+    if (!el) return;
+    function wheel(event: WheelEvent) {
+      const next = wheelImageScale(scaleRef.current, event, el!.clientHeight);
+      if (next === null || !size.width) return;
+      event.preventDefault();
+      if (saving || discard || active.current || textMove.current) return;
+      zoomAt(next, event.clientX, event.clientY);
+    }
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => el.removeEventListener("wheel", wheel);
+  }, [size.width, size.height, saving, discard]);
   const lineWidth = Math.max(3, Math.min(size.width, size.height) / 250);
   const fontSize = Math.max(18, size.width / 45);
+  const editorTextWidth = useMemo(() => {
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (!ctx) return fontSize;
+    ctx.font = `600 ${fontSize}px sans-serif`;
+    return ctx.measureText(editingText?.mark.text || "Type here…").width;
+  }, [editingText?.mark.text, fontSize]);
+  const textPadding = 4;
+  function shortcut(event: KeyboardEvent<HTMLElement>) {
+    if (saving || discard || active.current || textMove.current) return;
+    const action = imageHistoryShortcut(event);
+    if (!action) return;
+    event.preventDefault();
+    setHistory((old) => markupHistory(old, { type: action }));
+  }
   function close() {
     if (saving) return;
-    if (marks.length) setDiscard(true);
+    if (marks.length || editingText?.mark.text?.trim()) setDiscard(true);
     else onClose();
   }
-  function point(e: PointerEvent<SVGSVGElement>) {
+  function point(e: { clientX: number; clientY: number }) {
     return imagePoint(
       e.clientX,
       e.clientY,
-      e.currentTarget.getBoundingClientRect(),
+      image.current!.getBoundingClientRect(),
       size.width,
       size.height,
     );
@@ -82,47 +207,86 @@ export default function TaskImageViewer({
       setError("Save this copy before adding more markup.");
       return;
     }
+    e.preventDefault();
+    viewportElement.current?.focus();
     const p = point(e);
     if (tool === "text") {
-      if (!label.trim()) {
-        setError("Enter the label text first, then click where it belongs.");
-        return;
-      }
-      setMarks((old) => [
-        ...old,
-        { tool: "text", points: [p], color, text: label.trim() },
-      ]);
+      setEditingText({
+        index: null,
+        mark: {
+          tool: "text",
+          points: [[p[0], Math.min(size.height, p[1] + fontSize)]],
+          color,
+          text: "",
+        },
+      });
       setError("");
       return;
     }
     e.currentTarget.setPointerCapture(e.pointerId);
-    active.current = { tool, color, points: [p, p] };
+    active.current = { tool, color: drawColor, points: [p, p] };
     setPreview(active.current);
     setError("");
   }
   function move(e: PointerEvent<SVGSVGElement>) {
+    const drag = textMove.current;
+    if (drag) {
+      const p = point(e);
+      const dx = p[0] - drag.start[0],
+        dy = p[1] - drag.start[1];
+      if (!drag.moved && Math.hypot(dx, dy) * scale < 3) return;
+      drag.moved = true;
+      drag.mark = {
+        ...drag.original,
+        points: [
+          [
+            Math.max(0, Math.min(size.width, drag.original.points[0][0] + dx)),
+            Math.max(
+              fontSize,
+              Math.min(size.height, drag.original.points[0][1] + dy),
+            ),
+          ],
+        ],
+      };
+      setMovingText({ index: drag.index, mark: drag.mark });
+      return;
+    }
     const mark = active.current;
     if (!mark) return;
     const p = point(e);
     active.current = {
       ...mark,
       points:
-        mark.tool === "pen"
+        mark.tool === "pen" || mark.tool === "highlighter"
           ? [...mark.points.slice(-1999), p]
           : [mark.points[0], p],
     };
     setPreview(active.current);
   }
   function finish(e: PointerEvent<SVGSVGElement>) {
+    if (textMove.current) {
+      move(e);
+      const drag = textMove.current;
+      textMove.current = null;
+      setMovingText(null);
+      if (drag.moved)
+        commit(
+          marks.map((mark, index) => (index === drag.index ? drag.mark : mark)),
+        );
+      else setEditingText({ index: drag.index, mark: { ...drag.original } });
+      return;
+    }
     if (!active.current) return;
     move(e);
     const mark = active.current;
-    if (mark) setMarks((old) => [...old, mark]);
+    if (mark) commit([...marks, mark]);
     active.current = null;
     setPreview(null);
   }
   async function save() {
-    if (!onSave || !image.current || !size.width || !marks.length) return;
+    const savedMarks = textMarks();
+    if (!onSave || !image.current || !size.width || !savedMarks.length) return;
+    finishText();
     setSaving(true);
     setError("");
     try {
@@ -132,10 +296,12 @@ export default function TaskImageViewer({
       const ctx = canvas.getContext("2d");
       if (!ctx) throw Error("Image editing is unavailable in this browser.");
       ctx.drawImage(image.current, 0, 0);
-      for (const mark of marks) {
+      for (const mark of savedMarks) {
+        ctx.save();
+        ctx.globalAlpha = mark.tool === "highlighter" ? 0.35 : 1;
         ctx.strokeStyle = mark.color;
         ctx.fillStyle = mark.color;
-        ctx.lineWidth = lineWidth;
+        ctx.lineWidth = mark.tool === "highlighter" ? lineWidth * 5 : lineWidth;
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
         const first = mark.points[0],
@@ -164,6 +330,7 @@ export default function TaskImageViewer({
             ctx.fill();
           }
         }
+        ctx.restore();
       }
       const blob = await new Promise<Blob>((resolve, reject) =>
         canvas.toBlob(
@@ -201,6 +368,32 @@ export default function TaskImageViewer({
           fontSize={fontSize}
           fontWeight={600}
           fontFamily="sans-serif"
+          role={tool === "text" ? "button" : undefined}
+          aria-label={
+            tool === "text" ? `Edit annotation: ${mark.text}` : undefined
+          }
+          tabIndex={tool === "text" ? 0 : undefined}
+          style={{ cursor: tool === "text" ? "move" : undefined }}
+          onPointerDown={(e) => {
+            if (tool !== "text" || saving) return;
+            e.preventDefault();
+            e.stopPropagation();
+            viewportElement.current?.focus();
+            textMove.current = {
+              index,
+              original: mark,
+              start: point(e),
+              mark,
+              moved: false,
+            };
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }}
+          onKeyDown={(e) => {
+            if (tool === "text" && (e.key === "Enter" || e.key === " ")) {
+              e.preventDefault();
+              setEditingText({ index, mark: { ...mark } });
+            }
+          }}
         >
           {mark.text}
         </text>
@@ -219,12 +412,12 @@ export default function TaskImageViewer({
         />
       );
     return (
-      <g key={index}>
+      <g key={index} opacity={mark.tool === "highlighter" ? 0.35 : 1}>
         <polyline
           points={mark.points.map((p) => p.join(",")).join(" ")}
           fill="none"
           stroke={mark.color}
-          strokeWidth={lineWidth}
+          strokeWidth={mark.tool === "highlighter" ? lineWidth * 5 : lineWidth}
           strokeLinecap="round"
           strokeLinejoin="round"
         />
@@ -251,6 +444,7 @@ export default function TaskImageViewer({
         closeOnEscape={!saving && !discard}
         closeOnClickOutside={false}
         closeButtonProps={{ "aria-label": "Close image", disabled: saving }}
+        onKeyDown={shortcut}
         styles={{
           body: { maxHeight: "calc(100dvh - 180px)", overflowY: "auto" },
         }}
@@ -268,7 +462,7 @@ export default function TaskImageViewer({
               <Button
                 variant={zoom === 1 ? "light" : "default"}
                 size="xs"
-                onClick={() => setZoom(1)}
+                onClick={() => zoomAt(1)}
               >
                 100%
               </Button>
@@ -276,7 +470,7 @@ export default function TaskImageViewer({
                 <ActionIcon
                   aria-label="Zoom out"
                   variant="default"
-                  onClick={() => setZoom(Math.max(0.05, scale / 1.25))}
+                  onClick={() => zoomAt(Math.max(0.02, scale / 1.25))}
                 >
                   <ZoomOut size={16} />
                 </ActionIcon>
@@ -288,7 +482,7 @@ export default function TaskImageViewer({
                 <ActionIcon
                   aria-label="Zoom in"
                   variant="default"
-                  onClick={() => setZoom(Math.min(4, scale * 1.25))}
+                  onClick={() => zoomAt(Math.min(4, scale * 1.25))}
                 >
                   <ZoomIn size={16} />
                 </ActionIcon>
@@ -300,7 +494,7 @@ export default function TaskImageViewer({
                 variant="default"
                 leftSection={<Pencil size={14} />}
                 disabled={!size.width}
-                onClick={() => setTool("pen")}
+                onClick={() => setTool(penTool)}
               >
                 Mark up
               </Button>
@@ -310,8 +504,10 @@ export default function TaskImageViewer({
             <>
               <SegmentedControl
                 aria-label="Image markup tool"
-                value={tool}
-                onChange={(value) => setTool(value as Tool)}
+                value={tool === "highlighter" ? "pen" : tool}
+                onChange={(value) =>
+                  setTool(value === "pen" ? penTool : (value as Tool))
+                }
                 disabled={saving}
                 data={[
                   { value: "view", label: "View" },
@@ -330,7 +526,7 @@ export default function TaskImageViewer({
                   {[
                     ["Red", "#e03131"],
                     ["Blue", "#1971c2"],
-                    ["Yellow", "#f08c00"],
+                    ["Yellow", "#ffd43b"],
                     ["Black", "#212529"],
                   ].map(([label, value]) => (
                     <Tooltip label={`${label} markup`} key={value}>
@@ -339,37 +535,85 @@ export default function TaskImageViewer({
                         size={22}
                         style={{ backgroundColor: value, borderRadius: "50%" }}
                         aria-label={`${label} markup`}
-                        aria-pressed={color === value}
+                        aria-pressed={drawColor === value}
                         disabled={saving}
-                        onClick={() => setColor(value)}
+                        onClick={() =>
+                          tool === "highlighter"
+                            ? setHighlightColor(value)
+                            : setColor(value)
+                        }
                       >
-                        {color === value ? (
+                        {drawColor === value ? (
                           <Check size={13} color="white" />
                         ) : null}
                       </ActionIcon>
                     </Tooltip>
                   ))}
+                  {(tool === "pen" || tool === "highlighter") && (
+                    <Group
+                      gap={6}
+                      wrap="nowrap"
+                      ml="xs"
+                      aria-label="Drawing tools"
+                    >
+                      {(
+                        [
+                          ["pen", "Pen", Pencil],
+                          ["highlighter", "Highlighter", Highlighter],
+                        ] as const
+                      ).map(([value, label, Icon]) => (
+                        <Tooltip label={label} key={value}>
+                          <ActionIcon
+                            aria-label={label}
+                            aria-pressed={tool === value}
+                            variant={tool === value ? "light" : "default"}
+                            color={tool === value ? undefined : "gray"}
+                            size={30}
+                            disabled={saving}
+                            onClick={() => {
+                              setPenTool(value);
+                              setTool(value);
+                            }}
+                          >
+                            <Icon size={16} />
+                          </ActionIcon>
+                        </Tooltip>
+                      ))}
+                    </Group>
+                  )}
                 </Group>
-                {tool === "text" && (
-                  <TextInput
-                    aria-label="Annotation text"
-                    placeholder="Type a label, then click to place it"
-                    style={{ flex: "1 1 240px" }}
-                    maxLength={120}
-                    value={label}
-                    onChange={(e) => setLabel(e.currentTarget.value)}
-                    disabled={saving}
-                  />
-                )}
-                <Button
-                  size="xs"
-                  variant="subtle"
-                  disabled={!marks.length || saving}
-                  leftSection={<Undo2 size={13} />}
-                  onClick={() => setMarks((old) => old.slice(0, -1))}
-                >
-                  Undo
-                </Button>
+                <Group gap={6} wrap="nowrap" aria-label="Markup history">
+                  <Tooltip label="Undo (⌘Z / Ctrl+Z)">
+                    <ActionIcon
+                      aria-label="Undo"
+                      variant="default"
+                      size={30}
+                      disabled={!history.past.length || saving}
+                      onClick={() =>
+                        setHistory((old) =>
+                          markupHistory(old, { type: "undo" }),
+                        )
+                      }
+                    >
+                      <Undo2 size={16} />
+                    </ActionIcon>
+                  </Tooltip>
+                  <Tooltip label="Redo (⇧⌘Z / Ctrl+Shift+Z)">
+                    <ActionIcon
+                      aria-label="Redo"
+                      variant="default"
+                      size={30}
+                      disabled={!history.future.length || saving}
+                      onClick={() =>
+                        setHistory((old) =>
+                          markupHistory(old, { type: "redo" }),
+                        )
+                      }
+                    >
+                      <Redo2 size={16} />
+                    </ActionIcon>
+                  </Tooltip>
+                </Group>
               </Group>
             </>
           )}
@@ -379,9 +623,10 @@ export default function TaskImageViewer({
             </Alert>
           )}
           <div
-            ref={viewportRef}
+            ref={setViewportRef}
             className="td-image-viewport"
             aria-label="Expanded task image"
+            tabIndex={-1}
             style={{
               height:
                 tool === "view"
@@ -429,24 +674,96 @@ export default function TaskImageViewer({
                   onPointerUp={finish}
                   onPointerCancel={() => {
                     active.current = null;
+                    textMove.current = null;
+                    setMovingText(null);
                     setPreview(null);
                   }}
                 >
-                  {marks.map(shape)}
+                  {marks.map((mark, index) =>
+                    editingText?.index === index
+                      ? null
+                      : shape(
+                          movingText?.index === index ? movingText.mark : mark,
+                          index,
+                        ),
+                  )}
                   {preview && shape(preview, -1)}
                 </svg>
+              )}
+              {editingText && (
+                <TextInput
+                  key={editingText.index ?? "new"}
+                  autoFocus
+                  aria-label="Annotation text"
+                  placeholder="Type here…"
+                  value={editingText.mark.text || ""}
+                  maxLength={120}
+                  disabled={saving}
+                  onChange={(e) =>
+                    setEditingText({
+                      ...editingText,
+                      mark: {
+                        ...editingText.mark,
+                        text: e.currentTarget.value,
+                      },
+                    })
+                  }
+                  onBlur={finishText}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      finishText();
+                      viewportElement.current?.focus();
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setEditingText(null);
+                      viewportElement.current?.focus();
+                    }
+                  }}
+                  className="td-image-text-editor"
+                  style={{
+                    left:
+                      editingText.mark.points[0][0] * scale - textPadding - 1,
+                    top: Math.max(
+                      0,
+                      (editingText.mark.points[0][1] - fontSize) * scale -
+                        textPadding -
+                        1,
+                    ),
+                    width: editorTextWidth * scale + 2 * textPadding + 2,
+                  }}
+                  styles={{
+                    input: {
+                      color: editingText.mark.color,
+                      fontSize: fontSize * scale,
+                      fontWeight: 600,
+                      fontFamily: "sans-serif",
+                      lineHeight: 1.2,
+                      height: fontSize * scale * 1.2 + 2 * textPadding + 2,
+                      minHeight: 0,
+                      padding: textPadding,
+                      border: "1px dotted var(--mantine-primary-color-filled)",
+                      borderRadius: 2,
+                      background: "transparent",
+                    },
+                  }}
+                />
               )}
             </div>
           </div>
           <Group justify="space-between" className="td-image-actions">
             <Text size="xs" c="dimmed">
               {tool === "view"
-                ? "Zoom in to inspect details. Scroll to move around the image."
-                : draft
-                  ? "Original kept. Add a copy to this draft, then save the task."
-                  : "Original kept. Markup is saved as a new PNG attachment."}
+                ? "Pinch or Ctrl+scroll to zoom. Scroll to move around the image."
+                : tool === "text"
+                  ? "Click to type or edit. Drag a label to move it. Enter finishes; Escape cancels."
+                  : draft
+                    ? "Original kept. Add a copy to this draft, then save the task."
+                    : "Original kept. Markup is saved as a new PNG attachment."}
             </Text>
-            {onSave && marks.length > 0 && (
+            {onSave && textMarks().length > 0 && (
               <Button size="sm" onClick={() => void save()} loading={saving}>
                 {draft ? "Add marked-up copy" : "Save marked-up copy"}
               </Button>

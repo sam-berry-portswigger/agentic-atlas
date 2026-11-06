@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { imagePoint, arrowHead } from "../shared/image-markup.js";
+import {
+  imagePoint,
+  arrowHead,
+  markupHistory,
+  wheelImageScale,
+} from "../shared/image-markup.js";
 import { DatabaseSync } from "node:sqlite";
 import { initAnalysisSchema } from "../server/analysis-store.js";
 import { initTodaySchema, createTodayService } from "../server/today-store.js";
@@ -123,4 +128,58 @@ test("saving a marked-up copy keeps the original attachment and rejects competin
   } finally {
     db.close();
   }
+});
+
+test("markup history restores edits and deletions, and new edits discard the redo branch", () => {
+  const original = { tool: "text", text: "Original", points: [[20, 40]] };
+  const edited = { ...original, text: "Edited" };
+  let h = { past: [], present: [], future: [] };
+  h = markupHistory(h, { type: "commit", marks: [original] });
+  h = markupHistory(h, { type: "commit", marks: [edited] });
+  h = markupHistory(h, { type: "commit", marks: [] });
+  h = markupHistory(h, { type: "undo" });
+  assert.deepEqual(h.present, [edited]);
+  h = markupHistory(h, { type: "undo" });
+  assert.deepEqual(h.present, [original]);
+  h = markupHistory(h, { type: "redo" });
+  assert.deepEqual(h.present, [edited]);
+  h = markupHistory(h, { type: "commit", marks: [original] });
+  assert.deepEqual(h.future, []);
+  assert.equal(markupHistory(h, { type: "redo" }), h);
+  assert.equal(original.text, "Original");
+});
+test("undo and redo preserve an empty history and restore the first mark", () => {
+  const empty = { past: [], present: [], future: [] };
+  assert.equal(markupHistory(empty, { type: "undo" }), empty);
+  assert.equal(markupHistory(empty, { type: "redo" }), empty);
+  const mark = {
+    tool: "arrow",
+    points: [
+      [0, 0],
+      [20, 30],
+    ],
+  };
+  const drawn = markupHistory(empty, { type: "commit", marks: [mark] });
+  const undone = markupHistory(drawn, { type: "undo" });
+  assert.deepEqual(undone.present, []);
+  assert.deepEqual(markupHistory(undone, { type: "redo" }).present, [mark]);
+  assert.deepEqual(drawn.present, [mark]);
+});
+
+test("image wheel zoom handles pinch and scroll units, preserves plain scrolling, and stays bounded", () => {
+  const event = { ctrlKey: true, deltaY: -10, deltaMode: 0 };
+  assert.ok(wheelImageScale(1, event, 400) > 1);
+  assert.ok(wheelImageScale(1, { ...event, deltaY: 10 }, 400) < 1);
+  assert.equal(wheelImageScale(1, { ...event, ctrlKey: false }, 400), null);
+  assert.equal(wheelImageScale(1, { ...event, deltaY: NaN }, 400), null);
+  assert.equal(
+    wheelImageScale(1, { ...event, deltaY: -1, deltaMode: 1 }, 400),
+    wheelImageScale(1, { ...event, deltaY: -16 }, 400),
+  );
+  assert.equal(
+    wheelImageScale(1, { ...event, deltaY: -1, deltaMode: 2 }, 400),
+    wheelImageScale(1, { ...event, deltaY: -400 }, 400),
+  );
+  assert.equal(wheelImageScale(4, event, 400), 4);
+  assert.equal(wheelImageScale(0.02, { ...event, deltaY: 10000 }, 400), 0.02);
 });
