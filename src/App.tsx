@@ -809,15 +809,26 @@ export default function App() {
           />
         ) : (
           <>
-            <Button
-              variant="default"
-              leftSection={<CircleHelp size={15} />}
-              mb="lg"
-              onClick={openSetupGuide}
-            >
-              First-time setup guide
-            </Button>
             <AppearanceControls />
+            <div className="atlas-settings-guide-callout">
+              <CircleHelp size={18} aria-hidden="true" />
+              <div>
+                <Text fw={600} size="sm">
+                  New to Atlas?
+                </Text>
+                <Text size="xs" c="dimmed">
+                  Follow the setup guide to connect local models, choose session
+                  folders, and sync your conversations.
+                </Text>
+              </div>
+              <Button
+                variant="subtle"
+                size="compact-sm"
+                onClick={openSetupGuide}
+              >
+                View setup guide
+              </Button>
+            </div>
             {draft && (
               <form
                 onSubmit={(event) => {

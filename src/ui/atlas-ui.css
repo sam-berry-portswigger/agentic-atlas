@@ -70,6 +70,41 @@
   color: var(--atlas-fg-64725f, #64725f);
   margin-top: 2px;
 }
+.atlas-settings-guide-callout {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0 24px;
+  padding: 12px 14px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  background: var(--atlas-bg-f8f9fb, #f8f9fb);
+}
+.atlas-settings-guide-callout > svg {
+  flex: 0 0 auto;
+  color: var(--mantine-primary-color-filled);
+}
+.atlas-settings-guide-callout > div {
+  flex: 1;
+  min-width: 0;
+}
+.atlas-settings-guide-callout .mantine-Button-root {
+  flex: 0 0 auto;
+}
+@media (max-width: 480px) {
+  .atlas-settings-guide-callout {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    align-items: start;
+  }
+  .atlas-settings-guide-callout > svg {
+    margin-top: 2px;
+  }
+  .atlas-settings-guide-callout .mantine-Button-root {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
 .atlas-settings-actions {
   position: sticky;
   bottom: 0;
