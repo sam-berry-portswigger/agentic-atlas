@@ -97,7 +97,8 @@ test("suggestions use bounded evidence from only the selected session, validate 
       assert.match(system, /untrusted evidence/);
       assert.match(system, /overall subject or sustained goal/);
       const input = JSON.parse(prompt);
-      assert.equal(input.currentTitle, "Continue");
+      assert.equal("currentTitle" in input, false);
+      assert.ok(!prompt.includes("Continue"));
       assert.equal(input.messages.length, 12);
       assert.ok(
         input.messages.every(
@@ -129,4 +130,41 @@ test("suggestions use bounded evidence from only the selected session, validate 
     }),
     /Ollama unavailable/,
   );
+});
+
+test("session title metadata cannot influence naming input or cache identity", async () => {
+  let calls = 0;
+  const infer = async (_model, system, prompt) => {
+    calls++;
+    assert.ok(!prompt.includes("Misleading native title"));
+    assert.ok(!prompt.includes("Another native title"));
+    assert.match(system, /only on the message content/);
+    return "Atlas interface and workflow";
+  };
+  const args = {
+    session: "content-only",
+    model: "mock",
+    messages: [
+      {
+        session: "content-only",
+        role: "user",
+        text: "Improve Atlas image annotations and task navigation.",
+      },
+    ],
+  };
+  assert.deepEqual(
+    await suggestSessionTitle(
+      { ...args, title: "Misleading native title" },
+      infer,
+    ),
+    { title: "Atlas interface and workflow" },
+  );
+  assert.deepEqual(
+    await suggestSessionTitle(
+      { ...args, title: "Another native title" },
+      infer,
+    ),
+    { title: "Atlas interface and workflow" },
+  );
+  assert.equal(calls, 1);
 });
