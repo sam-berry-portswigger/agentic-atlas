@@ -253,6 +253,7 @@ test(
       cwd: process.cwd(),
       env: {
         ...process.env,
+        ATLAS_UPDATE_CHECKS: "0",
         ATLAS_CODEX_SOURCE: "",
         PORT: String(port),
         ATLAS_DATA_DIR: path.join(root, "data"),
@@ -283,6 +284,19 @@ test(
         }
       }
       assert.ok(ready, logs);
+      const updates = await request("updates");
+      assert.equal(updates.status, 200);
+      assert.equal(updates.available, false);
+      assert.equal(updates.canUpdate, false);
+      const disabledUpdates = await request("updates/preferences", {
+        enabled: false,
+      });
+      assert.equal(disabledUpdates.enabled, false);
+      const uncheckedUpdate = await request("updates/apply", {
+        expectedSha: "a".repeat(40),
+      });
+      assert.ok(uncheckedUpdate.error);
+      assert.equal(uncheckedUpdate.applying, false);
       assert.equal((await request("config", { source })).status, 200);
       assert.equal((await request("sync", {})).status, 202);
       async function done() {

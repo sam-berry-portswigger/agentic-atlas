@@ -139,6 +139,7 @@ test(
         cwd: process.cwd(),
         env: {
           ...process.env,
+          ATLAS_UPDATE_CHECKS: "0",
           PORT: String(port),
           ATLAS_DATA_DIR: dataDir,
           ATLAS_CODEX_SOURCE: "",

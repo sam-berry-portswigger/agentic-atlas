@@ -1,4 +1,10 @@
 import {
+  useAppUpdates,
+  UpdateSidebar,
+  UpdatePreferences,
+  UpdateDialog,
+} from "./AppUpdates";
+import {
   Checkbox,
   Autocomplete,
   Modal,
@@ -43,6 +49,7 @@ import { catalogueRevision } from "../shared/catalogue-revision.js";
 import { AppearanceControls } from "./ui/Appearance";
 const busyPhases = syncPhases;
 export default function App() {
+  const updates = useAppUpdates();
   const [page, setPage] = useState(() => {
     const view = new URLSearchParams(location.search).get("view");
     return view === "explore" || view === "mcp" ? view : "today";
@@ -389,6 +396,7 @@ export default function App() {
             <Settings2 size={17} />
             Settings & models
           </button>
+          <UpdateSidebar controller={updates} />
         </nav>
       </aside>
       <main>
@@ -415,6 +423,7 @@ export default function App() {
               <Plug size={14} />
               MCP
             </button>
+            <UpdateSidebar controller={updates} compact />
             <button aria-label="Settings" onClick={openSettings}>
               <Settings2 size={14} />
             </button>
@@ -791,8 +800,12 @@ export default function App() {
           />
         )
       )}
+      <UpdateDialog controller={updates} />
       <Modal
         opened={settings}
+        trapFocus={!updates.open}
+        closeOnEscape={!updates.open}
+        closeOnClickOutside={!updates.open}
         onClose={() => setSettings(false)}
         title={settingsGuide ? "First-time setup" : "Settings & models"}
         size={600}
@@ -912,6 +925,7 @@ export default function App() {
                 </div>
               </form>
             )}
+            <UpdatePreferences controller={updates} />
           </>
         )}
       </Modal>
