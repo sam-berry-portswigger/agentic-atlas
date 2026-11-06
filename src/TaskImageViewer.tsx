@@ -451,7 +451,7 @@ export default function TaskImageViewer({
       >
         <Stack gap="sm">
           <Group justify="space-between">
-            <Group gap="xs">
+            <Group gap={6} wrap="nowrap">
               <Button
                 variant={zoom === null ? "light" : "default"}
                 size="xs"
@@ -502,24 +502,28 @@ export default function TaskImageViewer({
           </Group>
           {tool !== "view" && (
             <>
-              <SegmentedControl
-                aria-label="Image markup tool"
-                value={tool === "highlighter" ? "pen" : tool}
-                onChange={(value) =>
-                  setTool(value === "pen" ? penTool : (value as Tool))
-                }
-                disabled={saving}
-                data={[
-                  { value: "view", label: "View" },
-                  { value: "pen", label: "Pen" },
-                  { value: "arrow", label: "Arrow" },
-                  { value: "rectangle", label: "Rectangle" },
-                  { value: "text", label: "Text" },
-                ]}
-              />
-              <Group justify="space-between">
+              <div className="td-image-tool-tabs">
+                <SegmentedControl
+                  size="xs"
+                  fullWidth
+                  aria-label="Image markup tool"
+                  value={tool === "highlighter" ? "pen" : tool}
+                  onChange={(value) =>
+                    setTool(value === "pen" ? penTool : (value as Tool))
+                  }
+                  disabled={saving}
+                  data={[
+                    { value: "view", label: "View" },
+                    { value: "pen", label: "Pen" },
+                    { value: "arrow", label: "Arrow" },
+                    { value: "rectangle", label: "Rectangle" },
+                    { value: "text", label: "Text" },
+                  ]}
+                />
+              </div>
+              <Group justify="space-between" gap="xs">
                 <Group
-                  gap="sm"
+                  gap={6}
                   className="td-image-colors"
                   aria-label="Markup color"
                 >
@@ -582,7 +586,12 @@ export default function TaskImageViewer({
                     </Group>
                   )}
                 </Group>
-                <Group gap={6} wrap="nowrap" aria-label="Markup history">
+                <Group
+                  gap={6}
+                  ml="auto"
+                  wrap="nowrap"
+                  aria-label="Markup history"
+                >
                   <Tooltip label="Undo (⌘Z / Ctrl+Z)">
                     <ActionIcon
                       aria-label="Undo"

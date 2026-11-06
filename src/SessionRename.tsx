@@ -151,14 +151,7 @@ export default function SessionRename({
           </Button>
         )}
         {error && <Alert color="red">{error}</Alert>}
-        <Group gap="xs">
-          <Button
-            type="submit"
-            loading={saving}
-            disabled={!title.trim() || title.trim() === session.title}
-          >
-            Save name
-          </Button>
+        <Group justify="space-between" gap="sm">
           <Button
             variant="default"
             loading={loading}
@@ -168,9 +161,18 @@ export default function SessionRename({
           >
             {suggestion ? "Suggest again" : "Suggest name"}
           </Button>
-          <Button variant="default" disabled={saving} onClick={onClose}>
-            Cancel
-          </Button>
+          <Group gap="xs" ml="auto">
+            <Button variant="default" disabled={saving} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              loading={saving}
+              disabled={!title.trim() || title.trim() === session.title}
+            >
+              Save name
+            </Button>
+          </Group>
         </Group>
       </Stack>
     </Modal>
