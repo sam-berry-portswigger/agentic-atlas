@@ -31,10 +31,7 @@ export const useAppearance = () => useContext(AppearanceContext);
 export function AppearanceControls() {
   const { appearance, update } = useAppearance();
   return (
-    <Stack gap="sm" className="atlas-appearance-controls">
-      <Text fw={600} size="sm">
-        Appearance
-      </Text>
+    <Stack gap="sm">
       <SegmentedControl
         aria-label="Colour mode"
         value={appearance.mode}

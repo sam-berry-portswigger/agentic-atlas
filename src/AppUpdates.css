@@ -8,9 +8,7 @@
   flex-shrink: 0;
 }
 .atlas-update-preferences {
-  padding: 20px 0;
-  margin: 20px 0;
-  border-block: 1px solid var(--mantine-color-default-border);
+  padding: 4px 0;
 }
 .atlas-update-commits {
   list-style: none;
@@ -44,4 +42,24 @@
 .atlas-update-details > summary:focus-visible {
   outline: 2px solid var(--mantine-primary-color-filled);
   outline-offset: 4px;
+}
+
+.atlas-update-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 14px;
+  margin-top: 16px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-default);
+}
+.atlas-update-status-copy {
+  min-width: 0;
+  flex: 1 1 180px;
+}
+.atlas-update-status-actions {
+  margin-left: auto;
 }

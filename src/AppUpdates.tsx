@@ -158,69 +158,95 @@ export function UpdatePreferences({
 }: {
   controller: Controller;
 }) {
+  const d = c.data;
+  const error = c.error || d?.error;
+  const checking = c.operation === "check" || !!d?.checking;
+  const status = checking
+    ? "Checking for updates…"
+    : d?.applying
+      ? "Updating Atlas…"
+      : error
+        ? "Couldn’t verify update status"
+        : !d
+          ? "Update status unavailable"
+          : d.restartRequired
+            ? "Restart to finish updating"
+            : d.available
+              ? "An update is available"
+              : d.behind > 0 && d.skippedVersion === d.targetSha
+                ? "This version is skipped"
+                : !d.enabled
+                  ? "Automatic checks are off"
+                  : d.lastChecked && d.behind === 0
+                    ? "You’re up to date"
+                    : "Ready to check for updates";
+  const checkedAt = d?.lastChecked
+    ? new Date(d.lastChecked).toLocaleString(undefined, {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
   return (
     <section className="atlas-update-preferences" aria-label="App updates">
-      <Text fw={600} size="sm" mb="sm">
-        App updates
-      </Text>
-      <Switch
-        label="Check GitHub for updates"
-        description="Checks at startup and every six hours. Updates require your approval."
-        checked={c.data?.enabled ?? true}
-        disabled={!c.data || c.pending || c.data.applying}
-        onChange={(e) =>
-          void c.act("preferences", { enabled: e.currentTarget.checked })
-        }
-      />
-      <Group gap="sm" mt="sm">
-        <Button
-          variant="default"
-          size="xs"
-          loading={c.operation === "check" || c.data?.checking}
-          disabled={c.pending || c.data?.applying}
-          leftSection={<RefreshCw size={13} />}
-          onClick={() => void c.act("check")}
-        >
-          Check now
-        </Button>
-        {c.data?.available && (
-          <Button variant="subtle" size="xs" onClick={() => c.setOpen(true)}>
-            Review update
-          </Button>
-        )}
-        {c.data?.lastChecked && (
-          <Text size="xs" c="dimmed">
-            {c.data.error ? "Last attempt" : "Last checked"}{" "}
-            {new Date(c.data.lastChecked).toLocaleString()}
+      <Group justify="space-between" wrap="nowrap" align="flex-start" gap="md">
+        <div>
+          <Text size="sm">Automatic update checks</Text>
+          <Text size="xs" c="dimmed" mt={4}>
+            Checks GitHub every six hours. You choose when to update.
           </Text>
-        )}
+        </div>
+        <Switch
+          aria-label="Automatic update checks"
+          checked={d?.enabled ?? true}
+          disabled={!d || c.pending || d.applying}
+          onChange={(e) =>
+            void c.act("preferences", { enabled: e.currentTarget.checked })
+          }
+        />
       </Group>
-      {(c.error || c.data?.error) && (
-        <Text c="red" size="xs" role="alert" mt="xs">
-          {c.error || c.data?.error}
-        </Text>
-      )}
-      {!c.pending && !c.data?.checking && !c.error && !c.data?.error && (
-        <Text size="xs" c="dimmed" mt="xs">
-          {!c.data
-            ? "Update status hasn’t loaded. Use Check now to retry."
-            : !c.data.enabled
-              ? "Automatic checks are off."
-              : c.data.restartRequired
-                ? "Update downloaded. Restart Atlas to load it."
-                : c.data.behind > 0 &&
-                    c.data.skippedVersion === c.data.targetSha
-                  ? "This version is skipped. You’ll hear about the next one."
-                  : c.data.lastChecked && c.data.behind === 0
-                    ? "You’re up to date."
-                    : !c.data.lastChecked
-                      ? "Atlas checks when it starts, then every six hours."
-                      : null}
+      <div className="atlas-update-status">
+        <div
+          className="atlas-update-status-copy"
+          role="status"
+          aria-live="polite"
+        >
+          <Text size="sm" fw={500}>
+            {status}
+          </Text>
+          {checkedAt && (
+            <Text size="xs" c="dimmed" mt={4}>
+              {d?.error ? "Last attempt" : "Last checked"} {checkedAt}
+            </Text>
+          )}
+        </div>
+        <Group gap="xs" className="atlas-update-status-actions">
+          <Button
+            variant="default"
+            size="xs"
+            loading={checking}
+            disabled={c.pending || d?.applying}
+            onClick={() => void c.act("check")}
+          >
+            Check now
+          </Button>
+          {(d?.available || d?.restartRequired) && (
+            <Button size="xs" onClick={() => c.setOpen(true)}>
+              {d.restartRequired ? "Next steps" : "Review update"}
+            </Button>
+          )}
+        </Group>
+      </div>
+      {error && (
+        <Text c="red" size="xs" role="alert" mt="sm">
+          {error}
         </Text>
       )}
     </section>
   );
 }
+
 export function UpdateDialog({ controller: c }: { controller: Controller }) {
   const d = c.data;
   const applying = c.operation === "apply" || !!d?.applying;

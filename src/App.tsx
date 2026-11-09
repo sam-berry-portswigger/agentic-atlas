@@ -5,6 +5,7 @@ import {
   UpdateDialog,
 } from "./AppUpdates";
 import {
+  Accordion,
   Checkbox,
   Autocomplete,
   Modal,
@@ -22,7 +23,6 @@ import {
   ArrowRight,
   ChevronDown,
   CircleHelp,
-  Cpu,
   Loader2,
   Network,
   Pause,
@@ -821,112 +821,130 @@ export default function App() {
             }}
           />
         ) : (
-          <>
-            <AppearanceControls />
-            <div className="atlas-settings-guide-callout">
-              <CircleHelp size={18} aria-hidden="true" />
-              <div>
-                <Text fw={600} size="sm">
-                  New to Atlas?
-                </Text>
-                <Text size="xs" c="dimmed">
-                  Follow the setup guide to connect local models, choose session
-                  folders, and sync your conversations.
-                </Text>
-              </div>
-              <Button
-                variant="subtle"
-                size="compact-sm"
-                onClick={openSetupGuide}
-              >
-                View setup guide
-              </Button>
-            </div>
-            {draft && (
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void save();
-                }}
-              >
-                <Stack gap="md">
+          draft && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void save();
+              }}
+            >
+              <div className="atlas-settings-guide-callout">
+                <CircleHelp size={18} aria-hidden="true" />
+                <div>
                   <Text fw={600} size="sm">
-                    Session sources
+                    New to Atlas?
                   </Text>
-                  <TextInput
-                    label="Claude sessions directory"
-                    value={draft.source}
-                    onChange={(e) =>
-                      setDraft({ ...draft, source: e.currentTarget.value })
-                    }
-                  />
-                  <TextInput
-                    label="Codex sessions directory"
-                    description="Includes archived sessions. Leave blank to use Claude only."
-                    value={draft.codexSource}
-                    placeholder="~/.codex/sessions"
-                    onChange={(e) =>
-                      setDraft({ ...draft, codexSource: e.currentTarget.value })
-                    }
-                  />
-                  <Text fw={600} size="sm" mt="xs">
-                    Local models
+                  <Text size="xs" c="dimmed">
+                    Follow the setup guide to connect local models, choose
+                    session folders, and sync your conversations.
                   </Text>
-                  <Autocomplete
-                    label="Embedding model"
-                    description="Changing this model re-embeds the index at the next sync."
-                    value={draft.embeddingModel}
-                    data={status?.ollama.models.map((m) => m.name) || []}
-                    onChange={(value) =>
-                      setDraft({ ...draft, embeddingModel: value })
-                    }
-                  />
-                  <Autocomplete
-                    label="Search & summary model"
-                    description="Choose an installed instruction model, or enter its name."
-                    value={draft.generationModel}
-                    data={status?.ollama.models.map((m) => m.name) || []}
-                    onChange={(value) =>
-                      setDraft({ ...draft, generationModel: value })
-                    }
-                  />
-                  {settingsError && (
-                    <div className="alert error" role="alert">
-                      {settingsError}
-                    </div>
-                  )}
-                  {busy && (
-                    <Text size="sm" c="dimmed">
-                      Indexing is running. Wait for it to finish or pause it
-                      before saving model or source changes.
-                    </Text>
-                  )}
-                </Stack>
-                <div className="atlas-settings-actions">
-                  <Button
-                    type="button"
-                    variant="default"
-                    onClick={() => setSettings(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    variant="filled"
-                    loading={saving}
-                    disabled={busy}
-                  >
-                    Save settings
-                  </Button>
                 </div>
-                <div className="hardware-info">
-                  <Cpu size={14} />
-                  {status?.hardware.chip} · {status?.hardware.memory} GB memory
-                </div>
-              </form>
-            )}
-            <UpdatePreferences controller={updates} />
-          </>
+                <Button
+                  type="button"
+                  variant="subtle"
+                  size="sm"
+                  onClick={openSetupGuide}
+                >
+                  View setup guide
+                </Button>
+              </div>
+              <Accordion defaultValue="appearance" variant="filled" radius="md">
+                <Accordion.Item value="appearance">
+                  <Accordion.Control>Appearance</Accordion.Control>
+                  <Accordion.Panel>
+                    <AppearanceControls />
+                  </Accordion.Panel>
+                </Accordion.Item>
+                <Accordion.Item value="sources">
+                  <Accordion.Control>Session sources</Accordion.Control>
+                  <Accordion.Panel>
+                    <Stack gap="md">
+                      <TextInput
+                        label="Claude sessions directory"
+                        value={draft.source}
+                        onChange={(e) =>
+                          setDraft({ ...draft, source: e.currentTarget.value })
+                        }
+                      />
+                      <TextInput
+                        label="Codex sessions directory"
+                        description="Includes archived sessions. Leave blank to use Claude only."
+                        value={draft.codexSource}
+                        placeholder="~/.codex/sessions"
+                        onChange={(e) =>
+                          setDraft({
+                            ...draft,
+                            codexSource: e.currentTarget.value,
+                          })
+                        }
+                      />
+                    </Stack>
+                  </Accordion.Panel>
+                </Accordion.Item>
+                <Accordion.Item value="models">
+                  <Accordion.Control>Local models</Accordion.Control>
+                  <Accordion.Panel>
+                    <Stack gap="md">
+                      <Autocomplete
+                        label="Embedding model"
+                        description="Changing this model re-embeds the index at the next sync."
+                        value={draft.embeddingModel}
+                        data={status?.ollama.models.map((m) => m.name) || []}
+                        onChange={(value) =>
+                          setDraft({ ...draft, embeddingModel: value })
+                        }
+                      />
+                      <Autocomplete
+                        label="Search & summary model"
+                        description="Choose an installed instruction model, or enter its name."
+                        value={draft.generationModel}
+                        data={status?.ollama.models.map((m) => m.name) || []}
+                        onChange={(value) =>
+                          setDraft({ ...draft, generationModel: value })
+                        }
+                      />
+                    </Stack>
+                  </Accordion.Panel>
+                </Accordion.Item>
+                <Accordion.Item value="updates">
+                  <Accordion.Control>App updates</Accordion.Control>
+                  <Accordion.Panel>
+                    <UpdatePreferences controller={updates} />
+                  </Accordion.Panel>
+                </Accordion.Item>
+              </Accordion>
+              <Stack gap="sm" mt="sm">
+                {settingsError && (
+                  <div className="alert error" role="alert">
+                    {settingsError}
+                  </div>
+                )}
+                {busy && (
+                  <Text size="sm" c="dimmed">
+                    Indexing is running. Wait for it to finish or pause it
+                    before saving model or source changes.
+                  </Text>
+                )}
+              </Stack>
+              <div className="atlas-settings-actions">
+                <Button
+                  type="button"
+                  variant="default"
+                  onClick={() => setSettings(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="filled"
+                  loading={saving}
+                  disabled={busy}
+                >
+                  Save settings
+                </Button>
+              </div>
+            </form>
+          )
         )}
       </Modal>
       <Modal
